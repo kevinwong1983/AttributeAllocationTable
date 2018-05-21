@@ -17,7 +17,8 @@ public:
 	AAT_t DebugAat[MAX_ATTRIBUTES];
 
 	void SetUp( ) {
-	   gpNvm_Stub_SetTestDataPath(testDataPath);
+	    gpNvm_Stub_SetTestDataPath(testDataPath);
+	    CleanUpTestData(testDataPath);
 	}
 
 	void TearDown( ) {
@@ -118,6 +119,24 @@ public:
 		EXPECT_EQ(crc, AttributeInfo.crc);
     }
 
+	void ExpectDataAndLengthOfAttributeId(UInt16 attributeId, UInt8 length, UInt8* pData_to_set)
+	{
+		UInt8 data_to_get[255];
+		memset(data_to_get, 0, 255);
+		UInt8 length_to_get = 0;
+
+		EXPECT_EQ(OK, gpNvm_GetAttribute(attributeId, &length_to_get, data_to_get));
+		EXPECT_EQ(length, length_to_get);
+		EXPECT_TRUE(0 == memcmp(pData_to_set, data_to_get, length));
+	}
+
+    gpNvm_Result SetupEmptyAat()
+    {
+    	SetupMainAttrAllocTabletInNvm(false);
+    	SetupBackupAttrAllocTabletInNvm(false);
+    	return gpNvm_Init();
+    }
+
 private:
 
 	const char *testDataPath = "./nvm/test/test_data";
@@ -181,11 +200,21 @@ TEST_F(storage, GivenCorruptedMainAndCorruptedBackupAttributeAllocTable_whenInit
 	EXPECT_EQ(NOK, gpNvm_Init());
 }
 
+TEST_F(storage, GivenEmptyAat_WhenGetAttributeThatDoesNotExist_ThenShouldReturnNok)
+{
+	EXPECT_EQ(OK, SetupEmptyAat());
+
+	UInt8 data_to_get[255];
+	memset(data_to_get, 0, 255);
+	UInt8 length_to_get = 0;
+
+	gpNvm_AttrId unknownAttributeId = 42;
+	EXPECT_EQ(NOK, gpNvm_GetAttribute(unknownAttributeId, &length_to_get, data_to_get));
+}
+
 TEST_F(storage, GivenEmptyAat_WhenSetAttributeOfOneByte_ThenAdministrationInTableShouldReferenceToAttribute)
 {
-	SetupMainAttrAllocTabletInNvm(false);
-	SetupBackupAttrAllocTabletInNvm(false);
-	EXPECT_EQ(OK, gpNvm_Init());
+	EXPECT_EQ(OK, SetupEmptyAat());
 
 	UInt8 data_to_set = 'a';
 	UInt8 length_to_set  = 1;
@@ -197,30 +226,43 @@ TEST_F(storage, GivenEmptyAat_WhenSetAttributeOfOneByte_ThenAdministrationInTabl
 
 TEST_F(storage, GivenEmptyAat_WhenSetAndGetAttributeOfOneByte_ThenValueShouldBeTheSame)
 {
-	SetupMainAttrAllocTabletInNvm(false);
-	SetupBackupAttrAllocTabletInNvm(false);
-	EXPECT_EQ(OK, gpNvm_Init());
+	EXPECT_EQ(OK, SetupEmptyAat());
 
 	UInt8 data_to_set = 'a';
 	UInt8 length_to_set  = 1;
 
-	UInt8 data_to_get = 0;
-	UInt8 length_to_get = 0;
-
 	UInt8 attributeId = 1;
 
 	EXPECT_EQ(OK, gpNvm_SetAttribute(attributeId, length_to_set, &data_to_set));
-	EXPECT_EQ(OK, gpNvm_GetAttribute(attributeId, &length_to_get, &data_to_get));
-
-	EXPECT_EQ(data_to_set, data_to_get);
+	ExpectDataAndLengthOfAttributeId(attributeId, length_to_set, &data_to_set);
 	ExpectAttributeAllocInfo(attributeId, 0, 0, length_to_set, Crc8_getCrc(&data_to_set, length_to_set));
+}
+
+TEST_F(storage, GivenAttributeSetInNvm_WhenReuingAttribbuteId_ThenOldDataIsOverwritten)
+{
+	// given attribute set in Nvm
+	EXPECT_EQ(OK, SetupEmptyAat());
+	UInt8 attributeId = 1;
+	UInt8 data_to_set1 = 'a';
+	UInt8 length_to_set1  = 1;
+
+	EXPECT_EQ(OK, gpNvm_SetAttribute(attributeId, length_to_set1, &data_to_set1));
+	ExpectDataAndLengthOfAttributeId(attributeId, length_to_set1, &data_to_set1);
+	ExpectAttributeAllocInfo(attributeId, 0, 0, length_to_set1, Crc8_getCrc(&data_to_set1, length_to_set1));
+
+	// when reusing attribute Id to set new data
+	UInt8 data_to_set2 = 'b';
+	UInt8 length_to_set2  = 1;
+	EXPECT_EQ(OK, gpNvm_SetAttribute(attributeId, length_to_set2, &data_to_set2));
+
+	// then old data is overwritten with new data.
+	ExpectDataAndLengthOfAttributeId(attributeId, length_to_set2, &data_to_set2);
+	ExpectAttributeAllocInfo(attributeId, 0, 0, length_to_set2, Crc8_getCrc(&data_to_set2, length_to_set2));
 }
 
 TEST_F(storage, GivenNonEmptyAat_WhenSetAndGetAttributeOfOneByte_ThenValueShouldBeTheSame)
 {
-	SetupMainAttrAllocTabletInNvm(false);
-	SetupBackupAttrAllocTabletInNvm(false);
-	EXPECT_EQ(OK, gpNvm_Init());
+	EXPECT_EQ(OK, SetupEmptyAat());
 
 	UInt8 data_to_set1 = 'a';
 	UInt8 data_to_set2 = 'b';
@@ -229,37 +271,20 @@ TEST_F(storage, GivenNonEmptyAat_WhenSetAndGetAttributeOfOneByte_ThenValueShould
 
 	UInt8 length_to_set  = 1;
 
-	UInt8 data_to_get = 0;
-	UInt8 length_to_get = 0;
-
 	EXPECT_EQ(OK, gpNvm_SetAttribute(1, length_to_set, &data_to_set1));
 	EXPECT_EQ(OK, gpNvm_SetAttribute(2, length_to_set, &data_to_set2));
 	EXPECT_EQ(OK, gpNvm_SetAttribute(3, length_to_set, &data_to_set3));
 	EXPECT_EQ(OK, gpNvm_SetAttribute(4, length_to_set, &data_to_set4));
 
-    data_to_get = 0;
-    length_to_get = 0;
-	EXPECT_EQ(OK, gpNvm_GetAttribute(1, &length_to_get, &data_to_get));
-	EXPECT_EQ(1, length_to_get);
-	EXPECT_EQ(data_to_set1, data_to_get);
-
-	data_to_get = 0;
-	length_to_get = 0;
-	EXPECT_EQ(OK, gpNvm_GetAttribute(2, &length_to_get, &data_to_get));
-	EXPECT_EQ(1, length_to_get);
-	EXPECT_EQ(data_to_set2, data_to_get);
-
-    data_to_get = 0;
-    length_to_get = 0;
-	EXPECT_EQ(OK, gpNvm_GetAttribute(3, &length_to_get, &data_to_get));
-	EXPECT_EQ(1, length_to_get);
-	EXPECT_EQ(data_to_set3, data_to_get);
-
-	data_to_get = 0;
-	length_to_get = 0;
-	EXPECT_EQ(OK, gpNvm_GetAttribute(4, &length_to_get, &data_to_get));
-	EXPECT_EQ(1, length_to_get);
-	EXPECT_EQ(data_to_set4, data_to_get);
+	int i = 10;
+	while (i > 0)
+	{
+		ExpectDataAndLengthOfAttributeId(1, length_to_set, &data_to_set1);
+		ExpectDataAndLengthOfAttributeId(2, length_to_set, &data_to_set2);
+		ExpectDataAndLengthOfAttributeId(3, length_to_set, &data_to_set3);
+		ExpectDataAndLengthOfAttributeId(4, length_to_set, &data_to_set4);
+		i--;
+	}
 
 	ExpectAttributeAllocInfo(1, 0, 0, length_to_set, Crc8_getCrc(&data_to_set1, length_to_set));
 	ExpectAttributeAllocInfo(2, 0, 1, length_to_set, Crc8_getCrc(&data_to_set2, length_to_set));
@@ -267,24 +292,123 @@ TEST_F(storage, GivenNonEmptyAat_WhenSetAndGetAttributeOfOneByte_ThenValueShould
 	ExpectAttributeAllocInfo(4, 0, 3, length_to_set, Crc8_getCrc(&data_to_set4, length_to_set));
 }
 
-TEST_F(storage, GivenNonEmptyAat_WhenSetAndGetAttributeOfByteArray_ThenValueShouldBeTheSame)
+TEST_F(storage, GivenAttributeOfOneByteDeleted_WhenSetNewAttributeOfOneByte_ThenNewAttributeWillBeWrittenInDeletedAddress)
 {
-	SetupMainAttrAllocTabletInNvm(false);
-	SetupBackupAttrAllocTabletInNvm(false);
-	EXPECT_EQ(OK, gpNvm_Init());
+	// Given attribute of one byte deleted
+	EXPECT_EQ(OK, SetupEmptyAat());
 
-	UInt8 data_to_set[64] = 'a';
+	UInt8 data_to_set1 = 'a';
+	UInt8 data_to_set2 = 'b';
+	UInt8 data_to_set3 = 'c';
+	UInt8 data_to_set4 = 'd';
+	UInt8 data_to_set5 = 'e';
+
 	UInt8 length_to_set  = 1;
 
-	UInt8 data_to_get = 0;
-	UInt8 length_to_get = 0;
+	EXPECT_EQ(OK, gpNvm_SetAttribute(1, length_to_set, &data_to_set1));
+	EXPECT_EQ(OK, gpNvm_SetAttribute(2, length_to_set, &data_to_set2));
+	EXPECT_EQ(OK, gpNvm_SetAttribute(3, length_to_set, &data_to_set3));
+	EXPECT_EQ(OK, gpNvm_SetAttribute(4, length_to_set, &data_to_set4));
 
+	ExpectDataAndLengthOfAttributeId(1, length_to_set, &data_to_set1);
+	ExpectDataAndLengthOfAttributeId(2, length_to_set, &data_to_set2);
+	ExpectDataAndLengthOfAttributeId(3, length_to_set, &data_to_set3);
+	ExpectDataAndLengthOfAttributeId(4, length_to_set, &data_to_set4);
+
+	ExpectAttributeAllocInfo(1, 0, 0, length_to_set, Crc8_getCrc(&data_to_set1, length_to_set));
+	ExpectAttributeAllocInfo(2, 0, 1, length_to_set, Crc8_getCrc(&data_to_set2, length_to_set));
+	ExpectAttributeAllocInfo(3, 0, 2, length_to_set, Crc8_getCrc(&data_to_set3, length_to_set));
+	ExpectAttributeAllocInfo(4, 0, 3, length_to_set, Crc8_getCrc(&data_to_set4, length_to_set));
+
+	gpNvm_DeleteAttribute(3);
+
+	// When set new attribute of one byte
+	EXPECT_EQ(OK, gpNvm_SetAttribute(5, length_to_set, &data_to_set5));
+
+	// Then new attribute will be written in deleted address
+	ExpectDataAndLengthOfAttributeId(5, length_to_set, &data_to_set5);
+	ExpectAttributeAllocInfo(5, 0, 2, length_to_set, Crc8_getCrc(&data_to_set5, length_to_set));
+}
+
+TEST_F(storage, GivenNonEmptyAat_WhenSetAndGetAttributeOfOneByteArray_ThenValueShouldBeTheSame)
+{
+	EXPECT_EQ(OK, SetupEmptyAat());
+
+	UInt8 data_to_set[PAGE_SIZE] = "1234567890abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopq";
+	UInt8 length_to_set  = PAGE_SIZE;
 	UInt8 attributeId = 1;
 
-	EXPECT_EQ(OK, gpNvm_SetAttribute(attributeId, length_to_set, &data_to_set));
-	EXPECT_EQ(OK, gpNvm_GetAttribute(attributeId, &length_to_get, &data_to_get));
+	EXPECT_EQ(OK, gpNvm_SetAttribute(attributeId, length_to_set, data_to_set));
 
-	EXPECT_EQ(data_to_set, data_to_get);
-	ExpectAttributeAllocInfo(attributeId, 0, 0, length_to_set, Crc8_getCrc(&data_to_set, length_to_set));
+	ExpectDataAndLengthOfAttributeId(attributeId, length_to_set,  data_to_set);
+	ExpectAttributeAllocInfo(attributeId, 0, 0, length_to_set, Crc8_getCrc(data_to_set, length_to_set));
 }
+
+TEST_F(storage, GivenNonEmptyAat_WhenSetAndGetAttributeOfMultipleByteArrayOfPageSize_ThenValuesShouldBeTheSame)
+{
+	// given non empty AAT
+	EXPECT_EQ(OK, SetupEmptyAat());
+	UInt8 data_to_set1[PAGE_SIZE] = "1234567890abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopq";
+	UInt8 length_to_set1  = PAGE_SIZE;
+
+	EXPECT_EQ(OK, gpNvm_SetAttribute(1, length_to_set1, data_to_set1));
+	ExpectDataAndLengthOfAttributeId(1, length_to_set1,  data_to_set1);
+	ExpectAttributeAllocInfo(1, 0, 0, length_to_set1, Crc8_getCrc(data_to_set1, length_to_set1));
+
+	// when set array of page size on attributeId 2
+	UInt8 data_to_set2[PAGE_SIZE] = "!@#$%^&*()abcdefghijklmnopqrstuvwxyz!@#$%^&*()abcdefghijklmnopq";
+	UInt8 length_to_set2  = PAGE_SIZE;
+	EXPECT_EQ(OK, gpNvm_SetAttribute(2, length_to_set2, data_to_set2));
+
+	// then a get on attributeId 2 should give set data
+	ExpectDataAndLengthOfAttributeId(2, length_to_set2,  data_to_set2);
+
+	// then a get on attributeId 2 should give set data
+	ExpectAttributeAllocInfo(2, 1, 0, length_to_set2, Crc8_getCrc(data_to_set2, length_to_set2));
+}
+
+TEST_F(storage, GivenNonEmptyAat_WhenSetAndGetAttributeOfMultipleByteArrayOfLagerThenSize_ThenValuesShouldBeTheSame)
+{
+	EXPECT_EQ(OK, SetupEmptyAat());
+	UInt8 data_to_set[255] = "12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345601234";
+	UInt8 length_to_set = 255;
+
+	EXPECT_EQ(OK, gpNvm_SetAttribute(1, length_to_set, data_to_set));
+	ExpectDataAndLengthOfAttributeId(1, length_to_set,  data_to_set);
+	ExpectAttributeAllocInfo(1, 0, 0, length_to_set, Crc8_getCrc(data_to_set, length_to_set));
+
+	EXPECT_EQ(OK, gpNvm_SetAttribute(2, length_to_set, data_to_set));
+	ExpectDataAndLengthOfAttributeId(2, length_to_set,  data_to_set);
+	ExpectAttributeAllocInfo(2, 3, 63, length_to_set, Crc8_getCrc(data_to_set, length_to_set));
+
+	EXPECT_EQ(OK, gpNvm_SetAttribute(3, length_to_set, data_to_set));
+	ExpectDataAndLengthOfAttributeId(3, length_to_set,  data_to_set);
+	ExpectAttributeAllocInfo(3, 7, 62, length_to_set, Crc8_getCrc(data_to_set, length_to_set));
+
+	EXPECT_EQ(OK, gpNvm_SetAttribute(4, length_to_set, data_to_set));
+	ExpectDataAndLengthOfAttributeId(4, length_to_set,  data_to_set);
+	ExpectAttributeAllocInfo(4, 11, 61, length_to_set, Crc8_getCrc(data_to_set, length_to_set));
+}
+
+TEST_F(storage, GivenGivenFullNvm_WhenSetNewDataThatWillNotFit_ThenNvmFullErrorIsReturned)
+{
+	// Given given full nvm
+	EXPECT_EQ(OK, SetupEmptyAat());
+	UInt8 data_to_set[255] = "12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345601234";
+	UInt8 length_to_set = 255;
+
+	EXPECT_EQ(length_to_set, sizeof(data_to_set));
+	int i;
+	for (i = 0; i< 246; i++) //capacity of nvm = 64*(1024-40) = 62976 number of bytes; 62976/255 = 246.9; 246 time 255 byte write will still fit;
+	{
+		EXPECT_EQ(OK, gpNvm_SetAttribute(i, length_to_set, data_to_set));
+		ExpectDataAndLengthOfAttributeId(i, length_to_set,  data_to_set);
+	}
+
+	// When set new data that will not fit
+	// Then nvm full error is returned
+	EXPECT_EQ(FULL, gpNvm_SetAttribute(i, length_to_set, data_to_set));	 //247th of 255 byte write nvm is full
+}
+
+
 

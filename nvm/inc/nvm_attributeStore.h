@@ -41,46 +41,38 @@ page n data
 ]
 
 note top of memory
-<b>Assumptions of the NVM:
-* The non-volatile memory consist of n pages
-of 64 bytes each. For now lets say n=1024
-resulting in NVM size of 64bytesx1024pages=64Kbytes.
-* NVM address starts with in offset of
-0x1000. Thus the pages are accessible
-using address 0x1000 till 0x1400.
-* reading NVM address 0x1000, reads the first
-NVM page of 64 bytes
-* reading NVM address 0x1399, reads the last
-NVM page of 64 bytes
+	<b>Assumptions of the NVM:
+	* The non-volatile memory consist of n pages
+	of 64 bytes each. For now lets say n=1024
+	resulting in NVM size of 64bytesx1024pages = 64Kbytes = 65536bytes.
+	* NVM address starts with in offset of
+	0x1000. Thus the pages are accessible
+	using address 0x1000 till 0x1400.
+	* reading NVM address 0x1000, reads the first
+	NVM page of 64 bytes
+	* reading NVM address 0x1399, reads the last
+	NVM page of 64 bytes
 end note
 
 note right of memory
-<b>Design decisions
-Taken the Assumptions of NVM into account:
-* Each value can be stored, dependent on the
-length, in one (length<64 bytes) or
-more (length>64) pages in NVM.
-* <b>minimum storage space allocation per attribute
-Each value associated to a unique attribute id
-is store on a separate page. This has the disadvantage
-that a value of length 1 byte will allocate 64 bytes.
-However had the advantage that it saves a whole lot
-of complexity. In the future this can be optimized.
-* <b>maximum storage space allocation per attribute
-An Attribute value length is limited to a Uint8 value thus 255
-However for future changes the nvm component is designed
-so that can be as big  as the NVM minus
-the AAT tables e.g. almost an uint8 array of 64Kbytes.
- However your NVM is then full and the attribute needs
- to be deleted before you can store new attribute values.
-* A 8 bytes CRC implementation is
-used from https://users.ece.cmu.edu/~koopman/roses/dsn04/
-koopman04_crc_poly_embedded.pdf sourcecode can be found
-here: https://stackoverflow.com/questions/15169387/definitive-crc-for-c
-* The init, getter and setter will be Mutex locked to prevent
-access to the same data at the same time by different
-threads. This will prevent data corruption.
-For this implementation a stub will be used.
+	<b>Design decisions
+	Taken the Assumptions of NVM into account:
+	* Each value can be stored, dependent on the
+	length, in one (length<64 bytes) or
+	more (length>64) pages in NVM.
+	* <b>minimum storage space allocation per attribute
+	is one byte. Thus it is possible to store 64 attributes
+	of each one byte in one page.
+	* <b>maximum storage space allocation per attribute
+	An Attribute value length is limited to a UInt8 value .Thus
+	a length of 255. Also the Attribute Id is limited to a UInt8.
+	Thus Attribute Id between 0 and 255 are supported.
+	We can have a max of 255 attribute of 255 bytes each =
+	65025 bytes.
+	* A 8 bytes CRC implementation is
+	used from https://users.ece.cmu.edu/~koopman/roses/dsn04/
+	koopman04_crc_poly_embedded.pdf sourcecode can be found
+	here: https://stackoverflow.com/questions/15169387/definitive-crc-for-c
 end note
 
 together structs{
@@ -98,28 +90,53 @@ together structs{
 }
 
 note top of format_AAT_pages
-<b>The Attribute Allocation Table (AAT)
-is stored in pages 1-20 of
-the NVM. This table defines
-the memory format/layout of the rest
-of the NVM. It consist of a array of
-Attribute Allocation elements and a CRC
-over the whole Table.
+	<b>The Attribute Allocation Table (AAT)
+	is stored in pages 1-20 of
+	the NVM. This table defines
+	the memory format/layout of the rest
+	of the NVM. It consist of a array of
+	Attribute Allocation elements and a CRC
+	over the whole Table.
 
-Data integrity of the AAT is very important.
-<b>If AAT is corrupted in anyway, all the data in
-NVM is lost. In order to prevent this redundancy
-is added. An exact copy
-of the AAT is stored in page 21 and 40 of the NVM.
-We will call this <b>"backupAAT"
-The backupAAT is synced to the main AAT and
-only used when main AAT is corrupted.
+	Data integrity of the AAT is very important.
+	<b>If AAT is corrupted in anyway, all the data in
+	NVM is lost. In order to prevent this redundancy
+	is added. An exact copy
+	of the AAT is stored in page 21 and 40 of the NVM.
+	We will call this <b>"backupAAT"
+	The backupAAT is synced to the main AAT and
+	only used when main AAT is corrupted.
+
+	The AAT tables are overhead of the storage
+	capacity. We still have 1024 - 40 = 984 pages for storage.
+	984 pages x 64bytes = 62976 bytes. This mean that when
+	we want to write the max supported bytes of 65025,
+	the NVM will get full.
 end note
 
 note top of AAT-element
-<b>Each element of the AAT array represent data on NVM
-that corresponds to a attribute Identifier. This Id is
-the index of the AAT.
+	<b>Each element of the AAT array represent data on NVM
+	that corresponds to a attribute Identifier. This Id is
+	the index of the AAT.
+end note
+@enduml
+
+@startuml FutureImprovements
+
+note as N1
+	<b>Future Improvements
+	* The init, getter and setter will be Mutex locked to prevent
+	access to the same data at the same time by different
+	threads. This will prevent data corruption.
+	For this implementation a stub will be used.
+	* At this moment we the nvm component is tested on a
+	semi unit-test/integration test level. In the future
+	these levels should be split up into a unit-test level tests
+	(Sported by gtest and gmock) and integration level tests
+	using a underlying file structure to emulate non-volatile
+	memory storage.
+end note
+
 @enduml
 
 @startuml gpNvm_Init
@@ -285,6 +302,7 @@ enum
 {
 	OK = 0,
 	NOK,
+	FULL,
 };
 
 typedef UInt8 gpNvm_AttrId;
@@ -296,6 +314,8 @@ gpNvm_Result gpNvm_Init();
 gpNvm_Result gpNvm_GetAttribute(gpNvm_AttrId attrId, UInt8* pLength, UInt8* pValue);
 
 gpNvm_Result gpNvm_SetAttribute(gpNvm_AttrId attrId, UInt8 length, UInt8* pValue);
+
+gpNvm_Result gpNvm_DeleteAttribute(gpNvm_AttrId attrId);
 
 #ifdef __cplusplus
 }

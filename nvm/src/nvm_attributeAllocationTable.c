@@ -26,10 +26,10 @@
 /******************************************************************************/
 /*                        PRIVATE FUNCTION PROTOTYPES                         */
 /******************************************************************************/
+static int GetNumberOfValidAdresses(size_t sIn, AAT_t* pIn);
 static int Partition (AAT_t* pArr, int low, int high);
 static void FilterOutInvalidAdresses(AAT_t* pIn, size_t sIn, AAT_t** ppOut, size_t* sOut);
 static void FilterValidAddresses(size_t sIn, AAT_t* pIn, AAT_t* pSortedAndFilteredTable);
-static int GetNumberOfValidAdresses(size_t sIn, AAT_t* pIn);
 static void QuickSort(AAT_t pArr[], int low, int high);
 static void Swap(AAT_t* pA, AAT_t* pB);
 /******************************************************************************/

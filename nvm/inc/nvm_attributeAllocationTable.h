@@ -22,8 +22,6 @@ typedef struct
 	UInt8 crc;
 } AAT_format_t;
 
-AAT_t* returnTest();
-
 AAT_t* gpNvm_Loc_GetAttrAllocTable();
 
 void gpNvm_Loc_SortAndFilterAllocationTable(AAT_t* pIn, size_t sIn, AAT_t** ppOut, size_t* sOut);
