@@ -44,6 +44,9 @@ static gpNvm_Result ReadBackupAndRestoreMainAttrAllocTable(UInt8* pBuffer);
 static UInt16 GetAdressWithOffset(UInt16 address);
 static UInt16 GetAdressWithoutOffset(UInt16 address);
 static void ClearAttributeAllocTableEntry(gpNvm_AttrId attrId);
+static gpNvm_Result GetAttribute(gpNvm_AttrId attrId, UInt16 address, UInt8 length, UInt8 *pValue);
+static gpNvm_Result CalculateNextFreeAdressAndOffsetThatFitsNewAttribute(UInt8 length, UInt16* pStartOfCurrentAddress, UInt8* pStartOfCurrentOffset);
+static gpNvm_Result SetAttribute(UInt8 length, UInt16 startOfCurrentAddress, UInt8 startOfCurrentOffset, UInt8* pValue);
 /******************************************************************************/
 /*                          PRIVATE DATA DEFINITIONS                          */
 /******************************************************************************/
@@ -60,45 +63,24 @@ gpNvm_Result gpNvm_Init()
 
 gpNvm_Result gpNvm_GetAttribute(gpNvm_AttrId attrId, UInt8* pLength, UInt8* pValue)
 {
-	gpNvm_Result rv = OK;
-
-	UInt16 currentAdress = attrAllocTable[attrId].address;
-	UInt8 numberOfBytesToBeRead = attrAllocTable[attrId].length;
-
-	int i;
-	while (numberOfBytesToBeRead)
+	if (pLength == NULL)
 	{
-		UInt8 page[PAGE_SIZE];
-		if (numberOfBytesToBeRead == attrAllocTable[attrId].length) 	// firstPage
-		{
-			gpNvm_Read(currentAdress, page);
-			for (i = attrAllocTable[attrId].offset; (i < PAGE_SIZE) && (i < (attrAllocTable[attrId].offset + attrAllocTable[attrId].length)); i++)
-			{
-				*pValue++ = page[i];
-				numberOfBytesToBeRead --;
-			}
-		}
-		else if (numberOfBytesToBeRead > PAGE_SIZE)						// middle pages
-		{
-			gpNvm_Read(currentAdress, page);
-			for (i = 0; i < PAGE_SIZE; i++)
-			{
-				*pValue++ = page[i];
-				numberOfBytesToBeRead --;
-			}
-		}
-		else															// lastPage
-		{
-			gpNvm_Read(currentAdress, page);
-			int bytesLeft = numberOfBytesToBeRead;
-			for (i = 0; i < bytesLeft; i++)
-			{
-				*pValue++ = page[i];
-				numberOfBytesToBeRead --;
-			}
-		}
-		currentAdress ++;
+		return NOK;
 	}
+
+	UInt16 addressToRead = attrAllocTable[attrId].address;
+	if (addressToRead == 0)
+	{
+		return NOK;
+	}
+
+	UInt8 numberOfBytesToBeRead = attrAllocTable[attrId].length;
+	if (numberOfBytesToBeRead == 0)
+	{
+		return NOK;
+	}
+
+	gpNvm_Result rv = GetAttribute(attrId, addressToRead, numberOfBytesToBeRead, pValue);
 
 	*pLength = attrAllocTable[attrId].length;
 
@@ -113,130 +95,34 @@ gpNvm_Result gpNvm_SetAttribute(gpNvm_AttrId attrId, UInt8 length, UInt8* pValue
 
 	ClearAttributeAllocTableEntry(attrId);
 
-	// calculateNextFreeAdressAndOffsetThatFitsNewAttribute()
+	rv = CalculateNextFreeAdressAndOffsetThatFitsNewAttribute(length, &startOfCurrentAddress, &startOfCurrentOffset);
+	if (rv != OK)
 	{
-		AAT_t* pValidAAT = NULL;
-		size_t sizeOfValidAAT = 0;
-		gpNvm_Loc_SortAndFilterAllocationTable(attrAllocTable, MAX_ATTRIBUTES, &pValidAAT, &sizeOfValidAAT);
-
-		AAT_t AAT_debug[255];
-		memset(AAT_debug,0,sizeof(AAT_debug));
-		memcpy(AAT_debug, pValidAAT, sizeOfValidAAT*sizeof(AAT_t));
-
-		UInt16 endOfPreviousAddressPage;
-		UInt8 endOfPreviousAddressOffset;
-
-		int i;
-		if (sizeOfValidAAT == 0)
-		{
-			endOfPreviousAddressOffset = 0;
-			endOfPreviousAddressPage = GetAdressWithOffset(0);
-		}
-		else if (sizeOfValidAAT == 1)
-		{
-			int abs_startCurrent = (GetAdressWithoutOffset(pValidAAT[0].address) * PAGE_SIZE) + pValidAAT[0].offset;
-			int abs_endCurrent = abs_startCurrent + pValidAAT[0].length;
-			endOfPreviousAddressOffset = abs_endCurrent % PAGE_SIZE;
-			endOfPreviousAddressPage = GetAdressWithOffset(abs_endCurrent / PAGE_SIZE);
-		}
-		else
-		{
-			for (i = 0; i < sizeOfValidAAT; i++)
-			{
-				int abs_startCurrent = (GetAdressWithoutOffset(pValidAAT[i].address) * PAGE_SIZE) + pValidAAT[i].offset;
-				int abs_endCurrent = abs_startCurrent + pValidAAT[i].length;
-
-				int abs_startNext = 0;
-
-				if (i == sizeOfValidAAT-1)
-				{
-					abs_startNext = PAGE_SIZE * (NUMBER_OF_PAGES-AAT_DATA_OFFSET);
-					if (abs_startNext - abs_endCurrent >= length)
-					{
-						endOfPreviousAddressOffset = abs_endCurrent % PAGE_SIZE;
-						endOfPreviousAddressPage =  GetAdressWithOffset(abs_endCurrent / PAGE_SIZE);
-						break;
-					}
-					else
-					{
-						return FULL;
-					}
-				}
-				else
-				{
-					abs_startNext = (GetAdressWithoutOffset(pValidAAT[i+1].address) * PAGE_SIZE) + pValidAAT[i+1].offset;
-					if (abs_startNext - abs_endCurrent >= length)
-					{
-						endOfPreviousAddressOffset = abs_endCurrent % PAGE_SIZE;
-						endOfPreviousAddressPage =  GetAdressWithOffset(abs_endCurrent / PAGE_SIZE);
-						break;
-					}
-				}
-			}
-		}
-
-		startOfCurrentOffset = endOfPreviousAddressOffset;
-		startOfCurrentAddress = endOfPreviousAddressPage;
+		return rv;
 	}
 
 	// calculate CRC
 	UInt8 crc = Crc8_getCrc(pValue, length);
 
-	// Write()
+	rv = SetAttribute(length, startOfCurrentAddress, startOfCurrentOffset, pValue);
+	if (rv != OK)
 	{
-		int i;
-		UInt8 currentOffset = startOfCurrentOffset;
-		UInt16 currentAdress = startOfCurrentAddress;
-		UInt8 numberOfBytesToBeWritten = length;
-		while (numberOfBytesToBeWritten)
-		{
-			UInt8 page[PAGE_SIZE];
-			memset(page, 0, sizeof(page));
-			if (numberOfBytesToBeWritten == length)
-			{
-				gpNvm_Read(currentAdress, page);
-				for (i = currentOffset; (i < PAGE_SIZE) && (i < (currentOffset + length)); i++)
-				{
-					page[i] = *pValue++;
-					numberOfBytesToBeWritten --;
-				}
-				gpNvm_Write(currentAdress, page);
-			}
-			else if (numberOfBytesToBeWritten > PAGE_SIZE)
-			{
-				for (i = 0; i < PAGE_SIZE; i++)
-				{
-					page[i] = *pValue++;
-					numberOfBytesToBeWritten --;
-				}
-				gpNvm_Write(currentAdress, page);
-			}
-			else
-			{
-				int bytesLeft = numberOfBytesToBeWritten;
-				for (i = 0; i < bytesLeft; i++)
-				{
-					gpNvm_Read(currentAdress, page);
-					page[i] = *pValue++;
-					numberOfBytesToBeWritten --;
-				}
-				gpNvm_Write(currentAdress, page);
-			}
-			currentAdress ++;
-			currentOffset = 0;
-		}
+		return rv;
 	}
 
-	//update()
+	rv = SetAttribute(length, startOfCurrentAddress, startOfCurrentOffset, pValue);
+	if (rv != OK)
 	{
-		attrAllocTable[attrId].address = startOfCurrentAddress;
-		attrAllocTable[attrId].offset = startOfCurrentOffset;
-		attrAllocTable[attrId].length = length;
-		attrAllocTable[attrId].crc = crc;
-
-		WriteBackupAttrAllocTableToNvm((UInt8*) attrAllocTable);
-		WriteMainAttrAllocTableToNvm((UInt8*) attrAllocTable);
+		return rv;
 	}
+
+	attrAllocTable[attrId].address = startOfCurrentAddress;
+	attrAllocTable[attrId].offset = startOfCurrentOffset;
+	attrAllocTable[attrId].length = length;
+	attrAllocTable[attrId].crc = crc;
+
+	WriteBackupAttrAllocTableToNvm((UInt8*) attrAllocTable);
+	WriteMainAttrAllocTableToNvm((UInt8*) attrAllocTable);
 
 	return rv;
 }
@@ -250,6 +136,175 @@ gpNvm_Result gpNvm_DeleteAttribute(gpNvm_AttrId attrId)
 /******************************************************************************/
 /*                      PRIVATE FUNCTION IMPLEMENTATIONS                      */
 /******************************************************************************/
+
+static gpNvm_Result SetAttribute(UInt8 length, UInt16 startOfCurrentAddress, UInt8 startOfCurrentOffset, UInt8* pValue)
+{
+	gpNvm_Result rv = OK;
+
+	int i;
+	UInt8 currentOffset = startOfCurrentOffset;
+	UInt16 currentAdress = startOfCurrentAddress;
+	UInt8 numberOfBytesToBeWritten = length;
+
+	while (numberOfBytesToBeWritten)
+	{
+		UInt8 page[PAGE_SIZE];
+		memset(page, 0, sizeof(page));
+		if (numberOfBytesToBeWritten == length)
+		{
+			gpNvm_Read(currentAdress, page);
+			for (i = currentOffset; (i < PAGE_SIZE) && (i < (currentOffset + length)); i++)
+			{
+				page[i] = *pValue++;
+				numberOfBytesToBeWritten --;
+			}
+			gpNvm_Write(currentAdress, page);
+		}
+		else if (numberOfBytesToBeWritten > PAGE_SIZE)
+		{
+			for (i = 0; i < PAGE_SIZE; i++)
+			{
+				page[i] = *pValue++;
+				numberOfBytesToBeWritten --;
+			}
+			gpNvm_Write(currentAdress, page);
+		}
+		else
+		{
+			int bytesLeft = numberOfBytesToBeWritten;
+			for (i = 0; i < bytesLeft; i++)
+			{
+				gpNvm_Read(currentAdress, page);
+				page[i] = *pValue++;
+				numberOfBytesToBeWritten --;
+			}
+			gpNvm_Write(currentAdress, page);
+		}
+		currentAdress ++;
+		currentOffset = 0;
+	}
+
+	return rv;
+}
+
+static gpNvm_Result CalculateNextFreeAdressAndOffsetThatFitsNewAttribute(UInt8 length, UInt16* pStartOfCurrentAddress, UInt8* pStartOfCurrentOffset)
+{
+	gpNvm_Result rv = NOK;
+
+	AAT_t* pValidAAT = NULL;
+	size_t sizeOfValidAAT = 0;
+	gpNvm_Loc_SortAndFilterAllocationTable(attrAllocTable, MAX_ATTRIBUTES, &pValidAAT, &sizeOfValidAAT);
+
+	AAT_t AAT_debug[255];
+	memset(AAT_debug,0,sizeof(AAT_debug));
+	memcpy(AAT_debug, pValidAAT, sizeOfValidAAT*sizeof(AAT_t));
+
+	UInt16 endOfPreviousAddressPage;
+	UInt8 endOfPreviousAddressOffset;
+
+	int i;
+	if (sizeOfValidAAT == 0)
+	{
+		endOfPreviousAddressOffset = 0;
+		endOfPreviousAddressPage = GetAdressWithOffset(0);
+		rv = OK;
+	}
+	else if (sizeOfValidAAT == 1)
+	{
+		int abs_startCurrent = (GetAdressWithoutOffset(pValidAAT[0].address) * PAGE_SIZE) + pValidAAT[0].offset;
+		int abs_endCurrent = abs_startCurrent + pValidAAT[0].length;
+		endOfPreviousAddressOffset = abs_endCurrent % PAGE_SIZE;
+		endOfPreviousAddressPage = GetAdressWithOffset(abs_endCurrent / PAGE_SIZE);
+		rv = OK;
+	}
+	else
+	{
+		for (i = 0; i < sizeOfValidAAT; i++)
+		{
+			int abs_startCurrent = (GetAdressWithoutOffset(pValidAAT[i].address) * PAGE_SIZE) + pValidAAT[i].offset;
+			int abs_endCurrent = abs_startCurrent + pValidAAT[i].length;
+
+			int abs_startNext = 0;
+
+			if (i == sizeOfValidAAT-1)
+			{
+				abs_startNext = PAGE_SIZE * (NUMBER_OF_PAGES-AAT_DATA_OFFSET);
+				if (abs_startNext - abs_endCurrent >= length)
+				{
+					endOfPreviousAddressOffset = abs_endCurrent % PAGE_SIZE;
+					endOfPreviousAddressPage =  GetAdressWithOffset(abs_endCurrent / PAGE_SIZE);
+					rv = OK;
+					break;
+				}
+				else
+				{
+					rv = FULL;
+					break;
+				}
+			}
+			else
+			{
+				abs_startNext = (GetAdressWithoutOffset(pValidAAT[i+1].address) * PAGE_SIZE) + pValidAAT[i+1].offset;
+				if (abs_startNext - abs_endCurrent >= length)
+				{
+					endOfPreviousAddressOffset = abs_endCurrent % PAGE_SIZE;
+					endOfPreviousAddressPage =  GetAdressWithOffset(abs_endCurrent / PAGE_SIZE);
+					rv = OK;
+					break;
+				}
+			}
+		}
+	}
+
+	*pStartOfCurrentOffset = endOfPreviousAddressOffset;
+	*pStartOfCurrentAddress = endOfPreviousAddressPage;
+
+	return rv;
+}
+
+static gpNvm_Result GetAttribute(gpNvm_AttrId attrId, UInt16 address, UInt8 length, UInt8 *pValue)
+{
+	gpNvm_Result rv = OK;
+	UInt16 addressToRead = address;
+
+	int i;
+	while (length)
+	{
+		UInt8 page[PAGE_SIZE];
+		if (length == attrAllocTable[attrId].length) 	// first page
+		{
+			gpNvm_Read(addressToRead, page);
+			for (i = attrAllocTable[attrId].offset; ((i < PAGE_SIZE) && (i < (attrAllocTable[attrId].offset + attrAllocTable[attrId].length))); i++)
+			{
+				*pValue++ = page[i];
+				length --;
+			}
+		}
+		else if (length > PAGE_SIZE)					// middle pages
+		{
+			gpNvm_Read(addressToRead, page);
+			for (i = 0; i < PAGE_SIZE; i++)
+			{
+				*pValue++ = page[i];
+				length --;
+			}
+		}
+		else											// last page
+		{
+			gpNvm_Read(addressToRead, page);
+			int bytesLeft = length;
+			for (i = 0; i < bytesLeft; i++)
+			{
+				*pValue++ = page[i];
+				length --;
+			}
+		}
+		addressToRead ++;
+	}
+
+	return rv;
+}
+
 static UInt16 GetAdressWithoutOffset(UInt16 address)
 {
 	return (address - (NVM_OFFSET + AAT_DATA_OFFSET));
