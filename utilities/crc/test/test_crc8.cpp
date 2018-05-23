@@ -1,12 +1,9 @@
 #include <stdio.h>
 #include <dirent.h>
-#include <nvm_attributeStore.h>
-#include <nvm_attributeTypes.h>
 #include <string.h>
 #include <stdlib.h>
 #include "gtest/gtest.h"
 
-#include "nvm_attributeTypes.h"
 #include "crc8.h"
 
 class crc: public ::testing::Test {

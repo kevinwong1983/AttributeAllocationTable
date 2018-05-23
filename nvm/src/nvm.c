@@ -33,53 +33,21 @@ size_t ReadFromFile(int adress, void *pPage);
 /*                          PRIVATE DATA DEFINITIONS                          */
 /******************************************************************************/
 static char Path[PATH_LENGTH];
-static size_t NvmPageSize = PAGE_SIZE;
-static int NumberOfWriteCalled;
-static int NumberOfReadCalled;
 /******************************************************************************/
 /*                      PUBLIC FUNCTION IMPLEMENTATIONS                       */
 /******************************************************************************/
-void gpNvm_Stub_SetTestDataPath(const char *pPath)
+void gpNvm_NvmStoragePath(const char *pPath)
 {
 	strncpy(Path, pPath, strlen(pPath));
 }
 
-void gpNvm_Stub_SetNvmPageSize(size_t size)
-{
-	NvmPageSize = size;
-}
-
-void gpNvm_Stub_ClearNumberOfWriteCalled()
-{
-	NumberOfWriteCalled = 0;
-}
-
-void gpNvm_Stub_ClearNumberOfReadCalled()
-{
-	NumberOfReadCalled = 0;
-}
-
-int gpNvm_Stub_GetNumberOfWriteCalled()
-{
-	return NumberOfWriteCalled;
-}
-
-int gpNvm_Stub_GetNumberOfReadCalled()
-{
-	return NumberOfReadCalled;
-}
-
 size_t gpNvm_Write(int adress, void *pPage)
 {
-	NumberOfWriteCalled++;
-
 	return WriteToFile(adress, pPage);
 }
 
 size_t gpNvm_Read(int adress, void *pPage)
 {
-	NumberOfReadCalled++;
-
 	return ReadFromFile(adress, pPage);
 }
 /******************************************************************************/

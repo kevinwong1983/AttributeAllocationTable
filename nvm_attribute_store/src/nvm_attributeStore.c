@@ -1,17 +1,19 @@
 /******************************************************************************/
 /*                               INCLUDE FILES                                */
 /******************************************************************************/
+#include "nvm_attributeStore.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 
-#include "nvm_attributeStore.h"
-#include "nvm_attributeTypes.h"
-#include "nvm_attributeAllocationTable.h"
 #include "nvm.h"
 
 #include "crc8.h"
+
+#include "nvm_attributeTypes.h"
+#include "nvm_loc_attributeAllocationTable.h"
 /******************************************************************************/
 /*                            CONSTANT DEFINITIONS                            */
 /******************************************************************************/
@@ -32,97 +34,82 @@
 /*                        PRIVATE FUNCTION PROTOTYPES                         */
 /******************************************************************************/
 static bool ExtractTableFromBuffer(UInt8* pBuffer);
-static bool IsValid(AAT_format_t* pAttrAllocTableFormat);
+static bool IsValidAttrAllocTable(AAT_format_t* pAttrAllocTableFormat);
+static bool IsValidAttrAllocTableEntry(gpNvm_AttrId attrId);
+static bool IsValidValue(gpNvm_AttrId attrId, UInt8* pValue);
 static bool ReadAttrAllocTableFromNvm(UInt8* pBuffer, int startingAddress);
 static bool ReadBackupAttrAllocTableFromNvm(UInt8* pBuffer);
 static bool ReadMainAttrAllocTableFromNvm(UInt8* pBuffer);
 static bool WriteAttrAllocTableToNvm(UInt8* pBuffer, int startingAddress);
 static bool WriteBackupAttrAllocTableToNvm(UInt8* pBuffer);
 static bool WriteMainAttrAllocTableToNvm(UInt8* pBuffer);
+static gpNvm_Result CalculateNextFreeAdressAndOffsetThatFitsNewAttribute(UInt8 length, UInt16* pAddress, UInt8* pOffset);
+static gpNvm_Result GetAndValidateAttributeValue(gpNvm_AttrId attrId, UInt8* pLength, UInt8* pValue);
 static gpNvm_Result GetAttributeAllocTable();
+static gpNvm_Result GetAttributeValue(gpNvm_AttrId attrId, UInt8 *pValue);
 static gpNvm_Result ReadBackupAndRestoreMainAttrAllocTable(UInt8* pBuffer);
+static gpNvm_Result SetAttributeValue(UInt8 length, UInt16 startOfCurrentAddress, UInt8 startOfCurrentOffset, UInt8* pValue);
 static UInt16 GetAdressWithOffset(UInt16 address);
 static UInt16 GetAdressWithoutOffset(UInt16 address);
 static void ClearAttributeAllocTableEntry(gpNvm_AttrId attrId);
-static gpNvm_Result GetAttribute(gpNvm_AttrId attrId, UInt16 address, UInt8 length, UInt8 *pValue);
-static gpNvm_Result CalculateNextFreeAdressAndOffsetThatFitsNewAttribute(UInt8 length, UInt16* pStartOfCurrentAddress, UInt8* pStartOfCurrentOffset);
-static gpNvm_Result SetAttribute(UInt8 length, UInt16 startOfCurrentAddress, UInt8 startOfCurrentOffset, UInt8* pValue);
+static void UpdateAttrAllocTable(gpNvm_AttrId attrId, UInt16 address, UInt8 offset, UInt8 length, UInt8 crc);
 /******************************************************************************/
 /*                          PRIVATE DATA DEFINITIONS                          */
 /******************************************************************************/
-static AAT_t* attrAllocTable = NULL;
+static AAT_t* AttrAllocTable = NULL;
 /******************************************************************************/
 /*                      PUBLIC FUNCTION IMPLEMENTATIONS                       */
 /******************************************************************************/
 gpNvm_Result gpNvm_Init()
 {
-	attrAllocTable = (AAT_t*) gpNvm_Loc_GetAttrAllocTable();
-	memset(attrAllocTable, 0, (sizeof(AAT_t)*MAX_ATTRIBUTES));
+	AttrAllocTable = (AAT_t*) gpNvm_Loc_GetAttrAllocTable();
+	memset(AttrAllocTable, 0, (sizeof(AAT_t)*MAX_ATTRIBUTES));
 	return GetAttributeAllocTable();
 }
 
 gpNvm_Result gpNvm_GetAttribute(gpNvm_AttrId attrId, UInt8* pLength, UInt8* pValue)
 {
-	if (pLength == NULL)
+	gpNvm_Result rv = NOK;
+
+	if ((pLength == NULL) || (pValue == NULL))
 	{
-		return NOK;
+		return rv;
 	}
 
-	UInt16 addressToRead = attrAllocTable[attrId].address;
-	if (addressToRead == 0)
+	if (IsValidAttrAllocTableEntry(attrId))
 	{
-		return NOK;
+		rv = GetAndValidateAttributeValue(attrId, pLength, pValue);
 	}
-
-	UInt8 numberOfBytesToBeRead = attrAllocTable[attrId].length;
-	if (numberOfBytesToBeRead == 0)
-	{
-		return NOK;
-	}
-
-	gpNvm_Result rv = GetAttribute(attrId, addressToRead, numberOfBytesToBeRead, pValue);
-
-	*pLength = attrAllocTable[attrId].length;
 
 	return rv;
 }
 
 gpNvm_Result gpNvm_SetAttribute(gpNvm_AttrId attrId, UInt8 length, UInt8* pValue)
 {
-	gpNvm_Result rv = OK;
-	UInt8 startOfCurrentOffset = 0;
-	UInt16 startOfCurrentAddress = 0;
+	gpNvm_Result rv = NOK;
+
+	UInt8 offset = 0;
+	UInt16 address = 0;
+
+	if (pValue == NULL || length == 0)
+	{
+		return rv;
+	}
 
 	ClearAttributeAllocTableEntry(attrId);
-
-	rv = CalculateNextFreeAdressAndOffsetThatFitsNewAttribute(length, &startOfCurrentAddress, &startOfCurrentOffset);
+	rv = CalculateNextFreeAdressAndOffsetThatFitsNewAttribute(length, &address, &offset);
 	if (rv != OK)
 	{
 		return rv;
 	}
 
-	// calculate CRC
-	UInt8 crc = Crc8_getCrc(pValue, length);
-
-	rv = SetAttribute(length, startOfCurrentAddress, startOfCurrentOffset, pValue);
+	rv = SetAttributeValue(length, address, offset, pValue);
 	if (rv != OK)
 	{
 		return rv;
 	}
 
-	rv = SetAttribute(length, startOfCurrentAddress, startOfCurrentOffset, pValue);
-	if (rv != OK)
-	{
-		return rv;
-	}
-
-	attrAllocTable[attrId].address = startOfCurrentAddress;
-	attrAllocTable[attrId].offset = startOfCurrentOffset;
-	attrAllocTable[attrId].length = length;
-	attrAllocTable[attrId].crc = crc;
-
-	WriteBackupAttrAllocTableToNvm((UInt8*) attrAllocTable);
-	WriteMainAttrAllocTableToNvm((UInt8*) attrAllocTable);
+	UpdateAttrAllocTable(attrId, address, offset, length, Crc8_getCrc(pValue, length));
 
 	return rv;
 }
@@ -131,153 +118,68 @@ gpNvm_Result gpNvm_DeleteAttribute(gpNvm_AttrId attrId)
 {
 	ClearAttributeAllocTableEntry(attrId);
 
+	WriteBackupAttrAllocTableToNvm((UInt8*) AttrAllocTable);
+	WriteMainAttrAllocTableToNvm((UInt8*) AttrAllocTable);
+
 	return OK;
 }
 /******************************************************************************/
 /*                      PRIVATE FUNCTION IMPLEMENTATIONS                      */
 /******************************************************************************/
-
-static gpNvm_Result SetAttribute(UInt8 length, UInt16 startOfCurrentAddress, UInt8 startOfCurrentOffset, UInt8* pValue)
+static void UpdateAttrAllocTable(gpNvm_AttrId attrId, UInt16 address, UInt8 offset, UInt8 length, UInt8 crc)
 {
-	gpNvm_Result rv = OK;
+	AttrAllocTable[attrId].address = address;
+	AttrAllocTable[attrId].offset = offset;
+	AttrAllocTable[attrId].length = length;
+	AttrAllocTable[attrId].crc = crc;
 
-	int i;
-	UInt8 currentOffset = startOfCurrentOffset;
-	UInt16 currentAdress = startOfCurrentAddress;
-	UInt8 numberOfBytesToBeWritten = length;
-
-	while (numberOfBytesToBeWritten)
-	{
-		UInt8 page[PAGE_SIZE];
-		memset(page, 0, sizeof(page));
-		if (numberOfBytesToBeWritten == length)
-		{
-			gpNvm_Read(currentAdress, page);
-			for (i = currentOffset; (i < PAGE_SIZE) && (i < (currentOffset + length)); i++)
-			{
-				page[i] = *pValue++;
-				numberOfBytesToBeWritten --;
-			}
-			gpNvm_Write(currentAdress, page);
-		}
-		else if (numberOfBytesToBeWritten > PAGE_SIZE)
-		{
-			for (i = 0; i < PAGE_SIZE; i++)
-			{
-				page[i] = *pValue++;
-				numberOfBytesToBeWritten --;
-			}
-			gpNvm_Write(currentAdress, page);
-		}
-		else
-		{
-			int bytesLeft = numberOfBytesToBeWritten;
-			for (i = 0; i < bytesLeft; i++)
-			{
-				gpNvm_Read(currentAdress, page);
-				page[i] = *pValue++;
-				numberOfBytesToBeWritten --;
-			}
-			gpNvm_Write(currentAdress, page);
-		}
-		currentAdress ++;
-		currentOffset = 0;
-	}
-
-	return rv;
+	WriteBackupAttrAllocTableToNvm((UInt8*) AttrAllocTable);
+	WriteMainAttrAllocTableToNvm((UInt8*) AttrAllocTable);
 }
 
-static gpNvm_Result CalculateNextFreeAdressAndOffsetThatFitsNewAttribute(UInt8 length, UInt16* pStartOfCurrentAddress, UInt8* pStartOfCurrentOffset)
+static bool IsValidAttrAllocTableEntry(gpNvm_AttrId attrId)
+{
+	return ((AttrAllocTable[attrId].address != 0) && (AttrAllocTable[attrId].length != 0));
+}
+
+static bool IsValidValue(gpNvm_AttrId attrId, UInt8* pValue)
+{
+	return (AttrAllocTable[attrId].crc == Crc8_getCrc(pValue, AttrAllocTable[attrId].length));
+}
+
+static gpNvm_Result GetAndValidateAttributeValue(gpNvm_AttrId attrId, UInt8* pLength, UInt8* pValue)
 {
 	gpNvm_Result rv = NOK;
 
-	AAT_t* pValidAAT = NULL;
-	size_t sizeOfValidAAT = 0;
-	gpNvm_Loc_SortAndFilterAllocationTable(attrAllocTable, MAX_ATTRIBUTES, &pValidAAT, &sizeOfValidAAT);
-
-	AAT_t AAT_debug[255];
-	memset(AAT_debug,0,sizeof(AAT_debug));
-	memcpy(AAT_debug, pValidAAT, sizeOfValidAAT*sizeof(AAT_t));
-
-	UInt16 endOfPreviousAddressPage;
-	UInt8 endOfPreviousAddressOffset;
-
-	int i;
-	if (sizeOfValidAAT == 0)
+	if (GetAttributeValue(attrId, pValue) == OK)
 	{
-		endOfPreviousAddressOffset = 0;
-		endOfPreviousAddressPage = GetAdressWithOffset(0);
-		rv = OK;
-	}
-	else if (sizeOfValidAAT == 1)
-	{
-		int abs_startCurrent = (GetAdressWithoutOffset(pValidAAT[0].address) * PAGE_SIZE) + pValidAAT[0].offset;
-		int abs_endCurrent = abs_startCurrent + pValidAAT[0].length;
-		endOfPreviousAddressOffset = abs_endCurrent % PAGE_SIZE;
-		endOfPreviousAddressPage = GetAdressWithOffset(abs_endCurrent / PAGE_SIZE);
-		rv = OK;
-	}
-	else
-	{
-		for (i = 0; i < sizeOfValidAAT; i++)
+		if (IsValidValue(attrId, pValue))
 		{
-			int abs_startCurrent = (GetAdressWithoutOffset(pValidAAT[i].address) * PAGE_SIZE) + pValidAAT[i].offset;
-			int abs_endCurrent = abs_startCurrent + pValidAAT[i].length;
-
-			int abs_startNext = 0;
-
-			if (i == sizeOfValidAAT-1)
-			{
-				abs_startNext = PAGE_SIZE * (NUMBER_OF_PAGES-AAT_DATA_OFFSET);
-				if (abs_startNext - abs_endCurrent >= length)
-				{
-					endOfPreviousAddressOffset = abs_endCurrent % PAGE_SIZE;
-					endOfPreviousAddressPage =  GetAdressWithOffset(abs_endCurrent / PAGE_SIZE);
-					rv = OK;
-					break;
-				}
-				else
-				{
-					rv = FULL;
-					break;
-				}
-			}
-			else
-			{
-				abs_startNext = (GetAdressWithoutOffset(pValidAAT[i+1].address) * PAGE_SIZE) + pValidAAT[i+1].offset;
-				if (abs_startNext - abs_endCurrent >= length)
-				{
-					endOfPreviousAddressOffset = abs_endCurrent % PAGE_SIZE;
-					endOfPreviousAddressPage =  GetAdressWithOffset(abs_endCurrent / PAGE_SIZE);
-					rv = OK;
-					break;
-				}
-			}
+			*pLength = AttrAllocTable[attrId].length;
+			rv = OK;
 		}
 	}
-
-	*pStartOfCurrentOffset = endOfPreviousAddressOffset;
-	*pStartOfCurrentAddress = endOfPreviousAddressPage;
 
 	return rv;
 }
 
-static gpNvm_Result GetAttribute(gpNvm_AttrId attrId, UInt16 address, UInt8 length, UInt8 *pValue)
+static gpNvm_Result GetAttributeValue(gpNvm_AttrId attrId, UInt8 *pValue)
 {
 	gpNvm_Result rv = OK;
-	UInt16 addressToRead = address;
+	UInt16 addressToRead = AttrAllocTable[attrId].address;
+	UInt8 length = AttrAllocTable[attrId].length;
 
 	int i;
 	while (length)
 	{
 		UInt8 page[PAGE_SIZE];
-		if (length == attrAllocTable[attrId].length) 	// first page
+		if (length == AttrAllocTable[attrId].length) 	// first page
 		{
 			gpNvm_Read(addressToRead, page);
-			for (i = attrAllocTable[attrId].offset; ((i < PAGE_SIZE) && (i < (attrAllocTable[attrId].offset + attrAllocTable[attrId].length))); i++)
+			for (i = AttrAllocTable[attrId].offset; ((i < PAGE_SIZE) && (i < (AttrAllocTable[attrId].offset + AttrAllocTable[attrId].length))); i++)
 			{
 				*pValue++ = page[i];
-				length --;
+				length--;
 			}
 		}
 		else if (length > PAGE_SIZE)					// middle pages
@@ -286,7 +188,7 @@ static gpNvm_Result GetAttribute(gpNvm_AttrId attrId, UInt16 address, UInt8 leng
 			for (i = 0; i < PAGE_SIZE; i++)
 			{
 				*pValue++ = page[i];
-				length --;
+				length--;
 			}
 		}
 		else											// last page
@@ -296,10 +198,136 @@ static gpNvm_Result GetAttribute(gpNvm_AttrId attrId, UInt16 address, UInt8 leng
 			for (i = 0; i < bytesLeft; i++)
 			{
 				*pValue++ = page[i];
-				length --;
+				length--;
 			}
 		}
-		addressToRead ++;
+		addressToRead++;
+	}
+
+	return rv;
+}
+
+static gpNvm_Result SetAttributeValue(UInt8 length, UInt16 address, UInt8 offset, UInt8* pValue)
+{
+	gpNvm_Result rv = OK;
+
+	int i;
+	UInt8 numberOfBytesToBeWritten = length;
+
+	while (numberOfBytesToBeWritten)
+	{
+		UInt8 page[PAGE_SIZE];
+		memset(page, 0, sizeof(page));
+		if (numberOfBytesToBeWritten == length)			// first page
+		{
+			gpNvm_Read(address, page);
+			for (i = offset; (i < PAGE_SIZE) && (i < (offset + length)); i++)
+			{
+				page[i] = *pValue++;
+				numberOfBytesToBeWritten--;
+			}
+			gpNvm_Write(address, page);
+		}
+		else if (numberOfBytesToBeWritten > PAGE_SIZE)	// middle pages
+		{
+			for (i = 0; i < PAGE_SIZE; i++)
+			{
+				page[i] = *pValue++;
+				numberOfBytesToBeWritten--;
+			}
+			gpNvm_Write(address, page);
+		}
+		else											// last page
+		{
+			int bytesLeft = numberOfBytesToBeWritten;
+			gpNvm_Read(address, page);
+			for (i = 0; i < bytesLeft; i++)
+			{
+				page[i] = *pValue++;
+				numberOfBytesToBeWritten--;
+			}
+			gpNvm_Write(address, page);
+		}
+		address++;
+		offset = 0;
+	}
+
+	return rv;
+}
+
+static void CalculateAddressAndOffsetFromAbsEndOfPreviousEntry(int absoluteEndOfPreviousEntry, UInt16* pAddress, UInt8* pOffset)
+{
+	*pOffset = absoluteEndOfPreviousEntry % PAGE_SIZE;
+	*pAddress = GetAdressWithOffset(absoluteEndOfPreviousEntry / PAGE_SIZE);
+}
+
+static bool WillFit(int startNext, int endCurrent, UInt8 length)
+{
+	return ((startNext - endCurrent) >= length);
+}
+
+static int CalculateAbsoluteStartOfEntry(int index, AAT_t* pAttrAllocTableEntries)
+{
+	return (GetAdressWithoutOffset(pAttrAllocTableEntries[index].address) * PAGE_SIZE) + pAttrAllocTableEntries[index].offset;
+}
+
+static gpNvm_Result CalculateNextFreeAdressAndOffsetThatFitsNewAttribute(UInt8 length, UInt16* pAddress, UInt8* pOffset)
+{
+	gpNvm_Result rv = NOK;
+
+	AAT_t* pAttrAllocTableEntries = NULL;
+	size_t numberOfAttrAllocTableEntries = 0;
+	gpNvm_Loc_SortAndFilterAllocationTable(AttrAllocTable, MAX_ATTRIBUTES, &pAttrAllocTableEntries, &numberOfAttrAllocTableEntries);
+
+	int i;
+	if (numberOfAttrAllocTableEntries == 0)					// no entries
+	{
+		CalculateAddressAndOffsetFromAbsEndOfPreviousEntry(0, pAddress, pOffset);
+		rv = OK;
+	}
+	else if (numberOfAttrAllocTableEntries == 1)			// one entry
+	{
+		int absStartCurrent = CalculateAbsoluteStartOfEntry(0, pAttrAllocTableEntries);
+		int absEndCurrent = absStartCurrent + pAttrAllocTableEntries[0].length;
+
+		CalculateAddressAndOffsetFromAbsEndOfPreviousEntry(absEndCurrent, pAddress, pOffset);
+		rv = OK;
+	}
+	else													// >1 entries
+	{
+		for (i = 0; i < numberOfAttrAllocTableEntries; i++)
+		{
+			int absStartCurrent = CalculateAbsoluteStartOfEntry(i, pAttrAllocTableEntries);
+			int absEndCurrent = absStartCurrent + pAttrAllocTableEntries[i].length;
+
+			int absStartNext = 0;
+
+			if (i == (numberOfAttrAllocTableEntries - 1))	// last entry
+			{
+				absStartNext = MAX_STORAGE_CAPACITY;
+				if (WillFit(absStartNext, absEndCurrent, length))
+				{
+					CalculateAddressAndOffsetFromAbsEndOfPreviousEntry(absEndCurrent, pAddress, pOffset);
+					rv = OK;
+					break;
+				}
+				else
+				{
+					rv = FULL;
+					break;
+				}
+			}
+			else											// !last entry
+			{
+				absStartNext = CalculateAbsoluteStartOfEntry(i+1, pAttrAllocTableEntries);
+				if (WillFit(absStartNext, absEndCurrent, length))
+				{
+					CalculateAddressAndOffsetFromAbsEndOfPreviousEntry(absEndCurrent, pAddress, pOffset);
+					rv = OK;
+					break;
+				}
+			}
+		}
 	}
 
 	return rv;
@@ -317,10 +345,10 @@ static UInt16 GetAdressWithOffset(UInt16 address)
 
 static void ClearAttributeAllocTableEntry(gpNvm_AttrId attrId)
 {
-	attrAllocTable[attrId].address = 0;
-	attrAllocTable[attrId].offset = 0;
-	attrAllocTable[attrId].length = 0;
-	attrAllocTable[attrId].crc = 0;
+	AttrAllocTable[attrId].address = 0;
+	AttrAllocTable[attrId].offset = 0;
+	AttrAllocTable[attrId].length = 0;
+	AttrAllocTable[attrId].crc = 0;
 }
 
 static gpNvm_Result GetAttributeAllocTable()
@@ -415,7 +443,7 @@ static bool ReadBackupAttrAllocTableFromNvm(UInt8* pBuffer)
 	return ReadAttrAllocTableFromNvm(pBuffer, AAT_BACKUP_FIRST_PAGE);
 }
 
-static bool IsValid(AAT_format_t* pAttrAllocTableFormat)
+static bool IsValidAttrAllocTable(AAT_format_t* pAttrAllocTableFormat)
 {
 	return (pAttrAllocTableFormat->crc == Crc8_getCrc((UInt8*) pAttrAllocTableFormat->attrAllocTable, sizeof(pAttrAllocTableFormat->attrAllocTable)));
 }
@@ -427,9 +455,9 @@ static bool ExtractTableFromBuffer(UInt8* pBuffer)
 
 	memcpy(&attrAllocTableFormat, pBuffer, sizeof(attrAllocTableFormat));
 
-	if (IsValid(&attrAllocTableFormat))
+	if (IsValidAttrAllocTable(&attrAllocTableFormat))
 	{
-		memcpy(attrAllocTable, attrAllocTableFormat.attrAllocTable, sizeof(attrAllocTable));
+		memcpy(AttrAllocTable, attrAllocTableFormat.attrAllocTable, sizeof(attrAllocTableFormat.attrAllocTable));
 		rv = true;
 	}
 

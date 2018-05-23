@@ -1,5 +1,5 @@
-#ifndef QORVO_NVM_INC_NVM_ATTRIBUTETYPES_H_
-#define QORVO_NVM_INC_NVM_ATTRIBUTETYPES_H_
+#ifndef NVM_INC_NVM_ATTRIBUTETYPES_H_
+#define NVM_INC_NVM_ATTRIBUTETYPES_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,4 +28,4 @@ typedef struct {
 }
 #endif
 
-#endif /* QORVO_NVM_INC_NVM_ATTRIBUTETYPES_H_ */
+#endif /* NVM_INC_NVM_ATTRIBUTETYPES_H_ */

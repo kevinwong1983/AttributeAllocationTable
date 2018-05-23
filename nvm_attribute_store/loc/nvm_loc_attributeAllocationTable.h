@@ -5,8 +5,8 @@
 extern "C" {
 #endif
 
-#include "nvm_attributeTypes.h"
-#include "nvm_attributeStore.h"
+#include "../../nvm_attribute_store/inc/nvm_attributeTypes.h"
+#include "../../nvm_attribute_store/inc/nvm_attributeStore.h"
 
 typedef struct
 {

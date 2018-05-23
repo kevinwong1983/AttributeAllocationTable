@@ -1,18 +1,18 @@
 #include <stdio.h>
 #include <dirent.h>
-#include <nvm_attributeStore.h>
-#include <nvm_attributeTypes.h>
 #include <string.h>
 #include <stdlib.h>
 #include "gtest/gtest.h"
 
 #include "nvm.h"
 #include "nvm_stub.h"
+#include "../../nvm_attribute_store/inc/nvm_attributeStore.h"
+#include "../../nvm_attribute_store/inc/nvm_attributeTypes.h"
 
 class nvm: public ::testing::Test {
 public:
    void SetUp( ) {
-		gpNvm_Stub_SetTestDataPath(testDataPath);
+		gpNvm_NvmStoragePath(testDataPath);
    }
 
    void TearDown( ) {
@@ -34,7 +34,7 @@ public:
 	    closedir(folder);
 	}
 private:
-   const char *testDataPath = "./nvm/test/test_data";
+   const char *testDataPath = "./test_data";
 };
 
 TEST_F(nvm, GivenNoWrite_WhenRead_ThenReturnZero)

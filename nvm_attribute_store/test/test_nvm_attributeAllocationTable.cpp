@@ -4,12 +4,12 @@
 #include <stdlib.h>
 #include "gtest/gtest.h"
 
-#include "nvm_attributeAllocationTable.h"
-#include "nvm_attributeStore.h"
-#include "nvm_attributeTypes.h"
 #include "nvm.h"
 
 #include "nvm_stub.h"
+#include "nvm_attributeStore.h"
+#include "nvm_attributeTypes.h"
+#include "nvm_loc_attributeAllocationTable.h"
 
 class AAT: public ::testing::Test {
 public:

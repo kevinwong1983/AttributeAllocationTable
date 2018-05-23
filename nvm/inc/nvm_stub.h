@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-void gpNvm_Stub_SetTestDataPath(const char *pPath);
+void gpNvm_NvmStoragePath(const char *pPath);
 
 #ifdef __cplusplus
 }

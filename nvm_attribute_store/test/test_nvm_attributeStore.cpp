@@ -4,20 +4,20 @@
 #include <stdlib.h>
 #include "gtest/gtest.h"
 
-#include "nvm_attributeAllocationTable.h"
-#include "nvm_attributeStore.h"
-#include "nvm_attributeTypes.h"
 #include "nvm.h"
 #include "crc8.h"
 
 #include "nvm_stub.h"
+#include "nvm_attributeStore.h"
+#include "nvm_attributeTypes.h"
+#include "nvm_loc_attributeAllocationTable.h"
 
 class storage: public ::testing::Test {
 public:
 	AAT_t DebugAat[MAX_ATTRIBUTES];
 
 	void SetUp( ) {
-	    gpNvm_Stub_SetTestDataPath(testDataPath);
+	    gpNvm_NvmStoragePath(testDataPath);
 	    CleanUpTestData(testDataPath);
 	}
 
@@ -139,7 +139,7 @@ public:
 
 private:
 
-	const char *testDataPath = "./nvm/test/test_data";
+	const char *testDataPath = "./test_data";
 };
 
 TEST_F(storage, GivenNoAttributeAllocTables_whenInit_ThenRetunsNOK)

@@ -5,8 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "nvm_attributeAllocationTable.h"
 #include "nvm.h"
+
+#include "nvm_loc_attributeAllocationTable.h"
 /******************************************************************************/
 /*                            CONSTANT DEFINITIONS                            */
 /******************************************************************************/
