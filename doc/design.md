@@ -91,23 +91,28 @@ together structs{
 
 note top of format_AAT_pages
 	<b>The Attribute Allocation Table (AAT)
-	is stored in pages 1-20 of
+	* To keep an administration on data that is stored 
+	in the nvm, we make use of a so called Attribute
+	Allocation Table. This Table is loosely based on
+	a very light weight File Allocation Table (FAT) 
+	that is used to administrate files on a hard drive. 
+	We use the AAT to administrate attributes that are
+	written to the nvm.
+	* The AAT is stored in pages 1-20 of
 	the NVM. This table defines
 	the memory format/layout of the rest
 	of the NVM. It consist of a array of
 	Attribute Allocation elements and a CRC
 	over the whole Table.
-
-	Data integrity of the AAT is very important.
+	* Data integrity of the AAT is very important.
 	<b>If AAT is corrupted in anyway, all the data in
-	NVM is lost. In order to prevent this redundancy
+	NVM is lost. In order to prevent this,redundancy
 	is added. An exact copy
 	of the AAT is stored in page 21 and 40 of the NVM.
 	We will call this <b>"backupAAT"
 	The backupAAT is synced to the main AAT and
 	only used when main AAT is corrupted.
-
-	The AAT tables are overhead of the storage
+	* The AAT tables are overhead of the storage
 	capacity. We still have 1024 - 40 = 984 pages for storage.
 	984 pages x 64bytes = 62976 bytes. This mean that when
 	we want to write the max supported bytes of 65025,
@@ -115,7 +120,7 @@ note top of format_AAT_pages
 end note
 
 note top of AAT-element
-	<b>Each element of the AAT array represent data on NVM
+	<b>Each element of the AAT represent data on NVM
 	that corresponds to a attribute Identifier. This Id is
 	the index of the AAT.
 end note
@@ -128,7 +133,6 @@ note as N1
 	* The init, getter and setter will be Mutex locked to prevent
 	access to the same data at the same time by different
 	threads. This will prevent data corruption.
-	For this implementation a stub will be used.
 	* At this moment we the nvm component is tested on a
 	semi unit-test/integration test level. In the future
 	these levels should be split up into a unit-test level tests
@@ -140,12 +144,16 @@ end note
 @enduml
 
 @startuml gpNvm_Init
+note left of gpAttrStore
+	Initializing the attribute storage component by reading 
+	in the AAT that is stored in nmv. An backup AAT is available
+	in case the main AAT is currupted.
+end note
 
 database gpNvm
 participant CrcUtil
 participant gpAttrStore
 participant Application
-participant MutexUtil
 
 Application -> gpAttrStore : gpNvm_Init()
 loop for each AAT_NvmAdress in which AAT is stored
@@ -153,11 +161,11 @@ loop for each AAT_NvmAdress in which AAT is stored
 end
 gpAttrStore -> gpAttrStore: extract AAT from Buffer
 
-gpAttrStore -> CrcUtil : getCrc(AAT, sizeof(AAT))
+gpAttrStore <-> CrcUtil : getCrc(AAT, sizeof(AAT))
 alt CrcUtil OK
 	gpAttrStore -> Application : return OK
 else
- 	note right of gpAttrStore
+ 	note left of gpAttrStore
 	Here NVM has been corrupted
 	and read in redundancy backup AAT.
 	end note
@@ -165,12 +173,12 @@ else
 		gpAttrStore <-> gpNvm : Read(AAT_Backup_NvmAdress, Buffer[..]))
 	end
 	gpAttrStore -> gpAttrStore: extract AAT from Buffer
-	gpAttrStore -> CrcUtil : getCrc(AAT, sizeof(AAT))
+	gpAttrStore <-> CrcUtil : getCrc(AAT, sizeof(AAT))
 	alt CrcUtil OK
 		loop for each AAT_NvmAdress in which AAT is stored
 			gpAttrStore -> gpNvm : Write(AAT_NvmAdress, Buffer[..])
 		end
-		note right of gpAttrStore
+		note left of gpAttrStore
 		Also store correct AAT in
 		AAT_NvmAdress, overwriting the
 		corrupted AAT
@@ -187,54 +195,67 @@ end
 @enduml
 
 @startuml gpNvm_GetAttribute
+note left of gpAttrStore
+	Gets the attribute data stored in nvm with a 
+	attribute id.
+end note
 
 database gpNvm
 participant CrcUtil
 participant gpAttrStore
 participant Application
-participant MutexUtil
 
 Application -> gpAttrStore : gpNvm_GetAttribute(id, &length, &value);
-	loop foreach element in AAT
-	 	note right of gpAttrStore
-		loop through all elements of AAT
-		until it finds element with same
-		attribute Id
-		end note
-		alt element.attrId == id
-			gpAttrStore <-> gpNvm: Read(element.adress, &value, element.size);
-			gpAttrStore <-> gpAttrStore: &length = element.size
-			gpAttrStore -> CrcUtil : getCrc(&value, element.size);
-			alt CrcUtil OK
-				gpAttrStore -> Application : return OK
-			else
-				gpAttrStore -> Application : return NOK
-			end
+ 	note right of gpAttrStore
+		The attribute Id is used as an index of the 
+		AAT.  
+	end note
+	gpAttrStore -> gpAttrStore : AAT_t entry = AttrAllocTable[id]
+	group ReadAttribute(startAdress, &pValue, &pLength)
+		gpAttrStore -> gpAttrStore: address = entry.startAdress
+		alt address == firstPage
+			gpAttrStore -> gpAttrStore: Read(address, Buffer)
+			gpAttrStore -> gpAttrStore: copyFromBufferToValuePointer(startOffset, entry.length || PAGE_SIZE, pValue)
+		else address == middle
+			gpAttrStore -> gpAttrStore:  Read(address, Buffer)
+			gpAttrStore -> gpAttrStore: copyFromBufferToValuePointer(0, PAGE_SIZE, pValue)
+		else address == endAdress
+			gpAttrStore -> gpAttrStore: Read(address, Buffer))
+			gpAttrStore -> gpAttrStore: copyFromBufferToValuePointer(0, bytes_left, pValue)
 		end
+	end
+	gpAttrStore <-> CrcUtil: crc = getCrc(&pValue, length))
+	alt crc == entry.crc
+		gpAttrStore -> Application: OK
+	else 
+		gpAttrStore -> Application: NOK
 	end
 @enduml
 
 @startuml gpNvm_SetAttribute
+note left of gpAttrStore
+	Sets the attribute data in nvm with a 
+	attribute id and a length.
+end note
 
 database gpNvm
 participant CrcUtil
 participant gpAttrStore
 participant Application
-participant MutexUtil
 
 Application -> gpAttrStore : gpNvm_SetAttribute(id, length, &value);
 	note right of gpAttrStore
 		loop through AAT to find first
-		available adress that fits the
-		lenght of data you want to store.
+		available address that fits the
+		length of data you want to store.
 	end note
 	group calculateNextFreeAdressAndOffsetThatFitsNewAttribute()
 		gpAttrStore -> gpAttrStore: sortedAAT = sortByAdress(AAT)
-		note right: from lowest to highst adress
+		note right: from lowest to highest address
 		loop foreach element in sortedAAT
 			alt element.next.startOfAttributeInBytes - element.startOfAttributeInBytes >= length
 				note left of gpAttrStore
-					startOfAttributeInBytes = (adress x pagesize) + offset
+					startOfAttributeInBytes = (address x pagesize) + offset
 				end note
 				gpAttrStore -> gpAttrStore: element
 			end
@@ -249,15 +270,15 @@ Application -> gpAttrStore : gpNvm_SetAttribute(id, length, &value);
 			data from other attribute in the first
 			and last page
 		end note
-		alt adress == firstPage
-			gpAttrStore -> gpAttrStore: adress = startAdress
-			gpAttrStore -> gpAttrStore: Read(adress, Buffer))
+		alt address == firstPage
+			gpAttrStore -> gpAttrStore: address = startAdress
+			gpAttrStore -> gpAttrStore: Read(address, Buffer))
 			gpAttrStore -> gpAttrStore: WriteBuffer(startOffset, Buffer, pValue, PAGE)
 			gpAttrStore -> gpAttrStore: Write((startAdress, Buffer))
-		else adress == middle
-			gpAttrStore -> gpAttrStore: WriteBuffer(adress, Buffer)
-		else adress endAdress
-			gpAttrStore -> gpAttrStore: Read(adress, Buffer))
+		else address == middle
+			gpAttrStore -> gpAttrStore: WriteBuffer(address, Buffer)
+		else address == endAdress
+			gpAttrStore -> gpAttrStore: Read(address, Buffer))
 			gpAttrStore -> gpAttrStore: WriteBuffer(0, Buffer, pValue, PAGE)
 			gpAttrStore -> gpAttrStore: Write((startAdress, Buffer))
 		end
@@ -277,8 +298,6 @@ Application -> gpAttrStore : gpNvm_SetAttribute(id, length, &value);
 		Table with the new entry
 	end note
 	gpAttrStore -> Application : Return OK
-
-@enduml
 
 @enduml
 */

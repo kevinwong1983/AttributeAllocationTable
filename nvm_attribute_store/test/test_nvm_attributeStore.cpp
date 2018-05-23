@@ -238,7 +238,7 @@ TEST_F(storage, GivenEmptyAat_WhenSetAndGetAttributeOfOneByte_ThenValueShouldBeT
 	ExpectAttributeAllocInfo(attributeId, 0, 0, length_to_set, Crc8_getCrc(&data_to_set, length_to_set));
 }
 
-TEST_F(storage, GivenAttributeSetInNvm_WhenReuingAttribbuteId_ThenOldDataIsOverwritten)
+TEST_F(storage, GivenAttributeSetInNvm_WhenReusingAttribbuteId_ThenOldDataIsOverwritten)
 {
 	// given attribute set in Nvm
 	EXPECT_EQ(OK, SetupEmptyAat());
@@ -330,6 +330,47 @@ TEST_F(storage, GivenAttributeOfOneByteDeleted_WhenSetNewAttributeOfOneByte_Then
 	ExpectAttributeAllocInfo(5, 0, 2, length_to_set, Crc8_getCrc(&data_to_set5, length_to_set));
 }
 
+
+TEST_F(storage, GivenAttributeOfOneByteDeleted_WhenSetNewAttributeOfTwoByte_ThenNewAttributeWillBeWrittenInAddressOfNextAvaiableSpace)
+{
+	// Given attribute of one byte deleted
+	EXPECT_EQ(OK, SetupEmptyAat());
+
+	UInt8 data_to_set1 = 'a';
+	UInt8 data_to_set2 = 'b';
+	UInt8 data_to_set3 = 'c';
+	UInt8 data_to_set4 = 'd';
+	UInt8 length_to_set_1_4  = 1;
+
+	UInt8 data_to_set5[2] = {'e', 'f'};
+	UInt8 length_to_set_5  = 2;
+
+	EXPECT_EQ(OK, gpNvm_SetAttribute(1, length_to_set_1_4, &data_to_set1));
+	EXPECT_EQ(OK, gpNvm_SetAttribute(2, length_to_set_1_4, &data_to_set2));
+	EXPECT_EQ(OK, gpNvm_SetAttribute(3, length_to_set_1_4, &data_to_set3));
+	EXPECT_EQ(OK, gpNvm_SetAttribute(4, length_to_set_1_4, &data_to_set4));
+
+	ExpectDataAndLengthOfAttributeId(1, length_to_set_1_4, &data_to_set1);
+	ExpectDataAndLengthOfAttributeId(2, length_to_set_1_4, &data_to_set2);
+	ExpectDataAndLengthOfAttributeId(3, length_to_set_1_4, &data_to_set3);
+	ExpectDataAndLengthOfAttributeId(4, length_to_set_1_4, &data_to_set4);
+
+	ExpectAttributeAllocInfo(1, 0, 0, length_to_set_1_4, Crc8_getCrc(&data_to_set1, length_to_set_1_4));
+	ExpectAttributeAllocInfo(2, 0, 1, length_to_set_1_4, Crc8_getCrc(&data_to_set2, length_to_set_1_4));
+	ExpectAttributeAllocInfo(3, 0, 2, length_to_set_1_4, Crc8_getCrc(&data_to_set3, length_to_set_1_4));
+	ExpectAttributeAllocInfo(4, 0, 3, length_to_set_1_4, Crc8_getCrc(&data_to_set4, length_to_set_1_4));
+
+	gpNvm_DeleteAttribute(3);
+
+	// When set new attribute of one byte
+	EXPECT_EQ(OK, gpNvm_SetAttribute(5, length_to_set_5, (UInt8*) &data_to_set5));
+
+	// Then new attribute will be written in next available address
+	ExpectDataAndLengthOfAttributeId(5, length_to_set_5, (UInt8*) &data_to_set5);
+	ExpectAttributeAllocInfo(5, 0, 4, length_to_set_5, Crc8_getCrc((UInt8*) &data_to_set5, length_to_set_5));
+}
+
+
 TEST_F(storage, GivenNonEmptyAat_WhenSetAndGetAttributeOfOneByteArray_ThenValueShouldBeTheSame)
 {
 	EXPECT_EQ(OK, SetupEmptyAat());
@@ -408,6 +449,34 @@ TEST_F(storage, GivenGivenFullNvm_WhenSetNewDataThatWillNotFit_ThenNvmFullErrorI
 	// When set new data that will not fit
 	// Then nvm full error is returned
 	EXPECT_EQ(FULL, gpNvm_SetAttribute(i, length_to_set, data_to_set));	 //247th of 255 byte write nvm is full
+}
+
+TEST_F(storage, GivenEmptyAat_WhenSetAndGetAttributeOfTypeGpTestData_ThenValueShouldBeTheSame)
+{
+	EXPECT_EQ(OK, SetupEmptyAat());
+
+	gpTestData_t data_to_set = {1, 2, 3, {'h','a','l','l','o',' ','w','e','r','e','l','d','!','1','2','3','4','5','6','7'}};
+	UInt8 length_to_set  = sizeof(data_to_set);
+
+	UInt8 attributeId = 1;
+
+	EXPECT_EQ(OK, gpNvm_SetAttribute(attributeId, length_to_set, (UInt8*) &data_to_set));
+	ExpectDataAndLengthOfAttributeId(attributeId, length_to_set, (UInt8*) &data_to_set);
+	ExpectAttributeAllocInfo(attributeId, 0, 0, length_to_set, Crc8_getCrc((UInt8*) &data_to_set, length_to_set));
+}
+
+TEST_F(storage, GivenEmptyAat_WhenSetAndGetAttributeOfTypeUInt32_ThenValueShouldBeTheSame)
+{
+	EXPECT_EQ(OK, SetupEmptyAat());
+
+	UInt32 data_to_set = 0xA5A5A5A5;
+	UInt8 length_to_set  = sizeof(data_to_set);
+
+	UInt8 attributeId = 1;
+
+	EXPECT_EQ(OK, gpNvm_SetAttribute(attributeId, length_to_set, (UInt8*) &data_to_set));
+	ExpectDataAndLengthOfAttributeId(attributeId, length_to_set, (UInt8*) &data_to_set);
+	ExpectAttributeAllocInfo(attributeId, 0, 0, length_to_set, Crc8_getCrc((UInt8*) &data_to_set, length_to_set));
 }
 
 

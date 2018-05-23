@@ -27,7 +27,6 @@
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/gtest_src}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/nvm_attribute_store/inc}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/nvm_attribute_store/loc}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/nvm/loc}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/utilities/crc/inc}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/nvm/inc}&quot;"/>
 								</option>
@@ -40,7 +39,6 @@
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/nvm/inc}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/nvm_attribute_store/inc}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/nvm_attribute_store/loc}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/nvm/loc}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/utilities/crc/inc}&quot;"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.c.compiler.input.297837370" superClass="cdt.managedbuild.tool.gnu.c.compiler.input"/>
