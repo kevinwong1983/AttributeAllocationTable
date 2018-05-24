@@ -6,9 +6,7 @@ note as N1
 * be able to backup and restore values
 corresponding to a unique attribute identifier.
 * support different datatypes (UInt8, UInt32, Other structs...)
-* support arrays of the datatypes (in assignment
-it only states UInt8, however I have implemented
-as for all datatypes)
+* support arrays of the datatypes.
 * discovers corruption in the underlying storage.
 * recover from corruption in the underlying
 storage.
@@ -133,12 +131,17 @@ note as N1
 	* The init, getter and setter will be Mutex locked to prevent
 	access to the same data at the same time by different
 	threads. This will prevent data corruption.
-	* At this moment we the nvm component is tested on a
+	* At this moment the nvm component is tested on a
 	semi unit-test/integration test level. In the future
 	these levels should be split up into a unit-test level tests
 	(Sported by gtest and gmock) and integration level tests
 	using a underlying file structure to emulate non-volatile
 	memory storage.
+	* After after many Sets, Get and Deletes the attributes will be
+	fragmented over the nvm. It is then possible that the nvm is
+	full while there is space between the attributes. To cope with this
+	an de-fegmentation action needs to be preformed. Free space is filled
+	with attributes that can fit in them.   
 end note
 
 @enduml
