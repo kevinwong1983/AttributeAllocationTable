@@ -26,8 +26,8 @@
 /******************************************************************************/
 /*                        PRIVATE FUNCTION PROTOTYPES                         */
 /******************************************************************************/
-size_t WriteToFile(int adress, void *pPage);
-size_t ReadFromFile(int adress, void *pPage);
+size_t WriteToFile(int address, void *pPage);
+size_t ReadFromFile(int address, void *pPage);
 
 /******************************************************************************/
 /*                          PRIVATE DATA DEFINITIONS                          */
@@ -41,19 +41,19 @@ void gpNvm_NvmStoragePath(const char *pPath)
 	strncpy(Path, pPath, strlen(pPath));
 }
 
-size_t gpNvm_Write(int adress, void *pPage)
+size_t gpNvm_Write(int address, void *pPage)
 {
-	return WriteToFile(adress, pPage);
+	return WriteToFile(address, pPage);
 }
 
-size_t gpNvm_Read(int adress, void *pPage)
+size_t gpNvm_Read(int address, void *pPage)
 {
-	return ReadFromFile(adress, pPage);
+	return ReadFromFile(address, pPage);
 }
 /******************************************************************************/
 /*                      PRIVATE FUNCTION IMPLEMENTATIONS                      */
 /******************************************************************************/
-size_t WriteToFile(int adress, void *pPage)
+size_t WriteToFile(int address, void *pPage)
 {
 	if (pPage == NULL)
 	{
@@ -64,7 +64,7 @@ size_t WriteToFile(int adress, void *pPage)
 	size_t rv = 0;
 	char filePath[PATH_LENGTH];
 
-	sprintf(filePath, "%s/%d.bin", Path, adress);
+	sprintf(filePath, "%s/%d.bin", Path, address);
 	fp = fopen(Path, "w");
 	if(fp == NULL)
 	{
@@ -77,7 +77,7 @@ size_t WriteToFile(int adress, void *pPage)
 	return rv;
 }
 
-size_t ReadFromFile(int adress, void *pPage)
+size_t ReadFromFile(int address, void *pPage)
 {
 	if (pPage == NULL)
 	{
@@ -88,7 +88,7 @@ size_t ReadFromFile(int adress, void *pPage)
 	size_t rv = 0;
 	char filePath[PATH_LENGTH];
 
-	sprintf(filePath, "%s/%d.bin", Path, adress);
+	sprintf(filePath, "%s/%d.bin", Path, address);
 	fp = fopen(filePath, "r");
 	if(fp == NULL)
 	{

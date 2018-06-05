@@ -27,9 +27,9 @@
 /******************************************************************************/
 /*                        PRIVATE FUNCTION PROTOTYPES                         */
 /******************************************************************************/
-static int GetNumberOfValidAdresses(size_t sIn, AAT_t* pIn);
+static int GetNumberOfValidAddresses(size_t sIn, AAT_t* pIn);
 static int Partition (AAT_t* pArr, int low, int high);
-static void FilterOutInvalidAdresses(AAT_t* pIn, size_t sIn, AAT_t** ppOut, size_t* sOut);
+static void FilterOutInvalidAddresses(AAT_t* pIn, size_t sIn, AAT_t** ppOut, size_t* sOut);
 static void FilterValidAddresses(size_t sIn, AAT_t* pIn, AAT_t* pSortedAndFilteredTable);
 static void QuickSort(AAT_t pArr[], int low, int high);
 static void Swap(AAT_t* pA, AAT_t* pB);
@@ -64,7 +64,7 @@ void gpNvm_Loc_SortAndFilterAllocationTable(AAT_t* pIn, size_t sizeIn, AAT_t** p
 	QuickSort(pSortedTable, 0, sizeIn-1);
 
 	AAT_t* pSortedTableAndFiltered = NULL;
-	FilterOutInvalidAdresses(pSortedTable, sizeIn, &pSortedTableAndFiltered, pSizeOut);
+	FilterOutInvalidAddresses(pSortedTable, sizeIn, &pSortedTableAndFiltered, pSizeOut);
 	free(pSortedTable);
 
 	*ppOut = pSortedTableAndFiltered;
@@ -73,9 +73,9 @@ void gpNvm_Loc_SortAndFilterAllocationTable(AAT_t* pIn, size_t sizeIn, AAT_t** p
 /******************************************************************************/
 /*                      PRIVATE FUNCTION IMPLEMENTATIONS                      */
 /******************************************************************************/
-static void FilterOutInvalidAdresses(AAT_t* pIn, size_t sIn, AAT_t** ppOut, size_t* sOut)
+static void FilterOutInvalidAddresses(AAT_t* pIn, size_t sIn, AAT_t** ppOut, size_t* sOut)
 {
-	int numberOfValidAddresses = GetNumberOfValidAdresses(sIn, pIn);
+	int numberOfValidAddresses = GetNumberOfValidAddresses(sIn, pIn);
 
 	AAT_t* pSortedAndFilteredTable = (AAT_t*) malloc(numberOfValidAddresses*sizeof(AAT_t));
 	memset(pSortedAndFilteredTable, 0, numberOfValidAddresses*sizeof(AAT_t));
@@ -100,7 +100,7 @@ static void FilterValidAddresses(size_t sIn, AAT_t* pIn, AAT_t* pSortedAndFilter
 	}
 }
 
-static int GetNumberOfValidAdresses(size_t sIn, AAT_t* pIn)
+static int GetNumberOfValidAddresses(size_t sIn, AAT_t* pIn)
 {
 	int numberOfValidAddresses = 0;
 

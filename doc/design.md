@@ -19,17 +19,17 @@ rectangle memory[
 
 <b>NVM layout
 ----
-page0 AAT(page 1of2)
+page0 AAT(page 1of20)
 ----
-page1 AAT(page 2of2)
+page20 AAT(page 20of20)
 ----
-page2 AAT-backup(page 1of2)
+page21 AAT-backup(page 1of20)
 ----
-page3 AAT-backup(page 2of2)
+page40 AAT-backup(page 20of20)
 ----
-page4
+page41
 ----
-page5
+page42
 ====
 ...
 ====
@@ -79,7 +79,7 @@ together structs{
       CRC
     }
 
-    class AAT-element{
+    class AAT-entry{
       address:2bytes = address of page
       offset:1bytes = offset of page
       length:1bytes = size in bytes of data stored
@@ -97,10 +97,10 @@ note top of format_AAT_pages
 	We use the AAT to administrate attributes that are
 	written to the nvm.
 	* The AAT is stored in pages 1-20 of
-	the NVM. This table defines
+	the NVM. RoundUp((255*5)/64). This table defines
 	the memory format/layout of the rest
 	of the NVM. It consist of a array of
-	Attribute Allocation elements and a CRC
+	Attribute Allocation entries and a CRC
 	over the whole Table.
 	* Data integrity of the AAT is very important.
 	<b>If AAT is corrupted in anyway, all the data in
@@ -117,8 +117,8 @@ note top of format_AAT_pages
 	the NVM will get full.
 end note
 
-note top of AAT-element
-	<b>Each element of the AAT represent data on NVM
+note top of AAT-entry
+	<b>Each entry of the AAT represent data on NVM
 	that corresponds to a attribute Identifier. This Id is
 	the index of the AAT.
 end note
@@ -159,8 +159,8 @@ participant gpAttrStore
 participant Application
 
 Application -> gpAttrStore : gpNvm_Init()
-loop for each AAT_NvmAdress in which AAT is stored
-	gpAttrStore <-> gpNvm : Read(AAT_NvmAdress, Buffer[..]))
+loop for each AAT_NvmAddress in which AAT is stored
+	gpAttrStore <-> gpNvm : Read(AAT_NvmAddress, Buffer[..]))
 end
 gpAttrStore -> gpAttrStore: extract AAT from Buffer
 
@@ -172,18 +172,18 @@ else
 	Here NVM has been corrupted
 	and read in redundancy backup AAT.
 	end note
-	loop for each AAT_Backup_NvmAdress of where AAT_Backup is stored
-		gpAttrStore <-> gpNvm : Read(AAT_Backup_NvmAdress, Buffer[..]))
+	loop for each AAT_Backup_NvmAddress of where AAT_Backup is stored
+		gpAttrStore <-> gpNvm : Read(AAT_Backup_NvmAddress, Buffer[..]))
 	end
 	gpAttrStore -> gpAttrStore: extract AAT from Buffer
 	gpAttrStore <-> CrcUtil : getCrc(AAT, sizeof(AAT))
 	alt CrcUtil OK
-		loop for each AAT_NvmAdress in which AAT is stored
-			gpAttrStore -> gpNvm : Write(AAT_NvmAdress, Buffer[..])
+		loop for each AAT_NvmAddress in which AAT is stored
+			gpAttrStore -> gpNvm : Write(AAT_NvmAddress, Buffer[..])
 		end
 		note left of gpAttrStore
 		Also store correct AAT in
-		AAT_NvmAdress, overwriting the
+		AAT_NvmAddress, overwriting the
 		corrupted AAT
 		end note
 		gpAttrStore -> Application : return OK
@@ -214,16 +214,17 @@ Application -> gpAttrStore : gpNvm_GetAttribute(id, &length, &value);
 		AAT.  
 	end note
 	gpAttrStore -> gpAttrStore : AAT_t entry = AttrAllocTable[id]
-	group ReadAttribute(startAdress, &pValue, &pLength)
-		gpAttrStore -> gpAttrStore: address = entry.startAdress
+	loop have bytes to read
+		gpAttrStore -> gpAttrStore: address = entry.startAddress
+		gpAttrStore -> gpAttrStore: startOffset = entry.startOffset
 		alt address == firstPage
-			gpAttrStore -> gpAttrStore: Read(address, Buffer)
+			gpAttrStore <-> gpNvm: Read(address++, Buffer)
 			gpAttrStore -> gpAttrStore: copyFromBufferToValuePointer(startOffset, entry.length || PAGE_SIZE, pValue)
 		else address == middle
-			gpAttrStore -> gpAttrStore:  Read(address, Buffer)
+			gpAttrStore <-> gpNvm:  Read(address++, Buffer)
 			gpAttrStore -> gpAttrStore: copyFromBufferToValuePointer(0, PAGE_SIZE, pValue)
-		else address == endAdress
-			gpAttrStore -> gpAttrStore: Read(address, Buffer))
+		else address == endAddress
+			gpAttrStore <-> gpNvm: Read(address, Buffer))
 			gpAttrStore -> gpAttrStore: copyFromBufferToValuePointer(0, bytes_left, pValue)
 		end
 	end
@@ -252,48 +253,49 @@ Application -> gpAttrStore : gpNvm_SetAttribute(id, length, &value);
 		available address that fits the
 		length of data you want to store.
 	end note
-	group calculateNextFreeAdressAndOffsetThatFitsNewAttribute()
-		gpAttrStore -> gpAttrStore: sortedAAT = sortByAdress(AAT)
+	group calculateNextFreeAddressAndOffsetThatFitsNewAttribute()
+		gpAttrStore -> gpAttrStore: sortedAndFilteredAAT = sortByAddressAndFilterOutInvalidEntries(AAT)
 		note right: from lowest to highest address
-		loop foreach element in sortedAAT
-			alt element.next.startOfAttributeInBytes - element.startOfAttributeInBytes >= length
+		loop foreach entry in sortedAndFilteredAAT
+			alt entry.next.startOfAttributeInBytes - (entry.startOfAttributeInBytes + entry.length) >= length
 				note left of gpAttrStore
 					startOfAttributeInBytes = (address x pagesize) + offset
 				end note
-				gpAttrStore -> gpAttrStore: element
+				gpAttrStore -> gpAttrStore: startAddress = getEndAddress(entry);
+				gpAttrStore -> gpAttrStore: startOffset = getEndOffset(entry);
 			end
 		end
-		gpAttrStore -> gpAttrStore: startAdress = getEndAdress(element.adress, element.offset);
-		gpAttrStore -> gpAttrStore: startOffset = getEndOffset(element.adress, element.offset);
 	end
 
-	group Write(startAdress, startOffset, &value, length)
+	loop have bytes to write
 		note left of gpAttrStore
 			need to be carefull not to erase
 			data from other attribute in the first
 			and last page
 		end note
+		gpAttrStore -> gpAttrStore: address = startAddress
 		alt address == firstPage
-			gpAttrStore -> gpAttrStore: address = startAdress
-			gpAttrStore -> gpAttrStore: Read(address, Buffer))
-			gpAttrStore -> gpAttrStore: WriteBuffer(startOffset, Buffer, pValue, PAGE)
-			gpAttrStore -> gpAttrStore: Write((startAdress, Buffer))
+			
+			gpAttrStore <-> gpNvm: Read(address, Buffer))
+			gpAttrStore -> gpAttrStore: WriteBuffer(startOffset, Buffer, pValue, PAGE || (startOffset + length))
+			gpAttrStore <-> gpNvm: Write((address++, Buffer))
 		else address == middle
-			gpAttrStore -> gpAttrStore: WriteBuffer(address, Buffer)
-		else address == endAdress
-			gpAttrStore -> gpAttrStore: Read(address, Buffer))
 			gpAttrStore -> gpAttrStore: WriteBuffer(0, Buffer, pValue, PAGE)
-			gpAttrStore -> gpAttrStore: Write((startAdress, Buffer))
+			gpAttrStore <-> gpNvm: Write((address++, Buffer))
+		else address == endAddress
+			gpAttrStore -> gpNvm: Read(address, Buffer))
+			gpAttrStore -> gpAttrStore: WriteBuffer(0, Buffer, pValue, bytesLeft)
+			gpAttrStore -> gpNvm: Write((address, Buffer))
 		end
 	end
 
 	group update Attribute Allocation Table
-		gpAttrStore -> CrcUtil : CRC = getCrc(&value, length);
-		gpAttrStore -> gpAttrStore : AAT[id].address = startAdress
+		gpAttrStore <-> CrcUtil : CRC = getCrc(&value, length);
+		gpAttrStore -> gpAttrStore : AAT[id].address = startAddress
 		gpAttrStore -> gpAttrStore : AAT[id].size = length
 		gpAttrStore -> gpAttrStore : AAT[id].crc = CRC
-		gpAttrStore -> gpNvm: Write(AAT_NvmAdress, AAT, sizeof(AAT))
-		gpAttrStore -> gpNvm: Write(AAT_backup, AAT, sizeof(AAT))
+		gpAttrStore <-> gpNvm: Write(AAT_NvmAddress, AAT, sizeof(AAT))
+		gpAttrStore <-> gpNvm: Write(AAT_backup, AAT, sizeof(AAT))
 	end
 
 	note left of gpAttrStore

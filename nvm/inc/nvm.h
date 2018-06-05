@@ -13,9 +13,9 @@ extern "C" {
 
 #define NVM_OFFSET				0x1000	// offset address to the non-volatile memory
 
-size_t gpNvm_Write(int adress, void *pData);
+size_t gpNvm_Write(int address, void *pData);
 
-size_t gpNvm_Read(int adress, void *pData);
+size_t gpNvm_Read(int address, void *pData);
 
 #ifdef __cplusplus
 }

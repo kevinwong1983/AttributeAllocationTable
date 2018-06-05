@@ -49,7 +49,7 @@ TEST_F(nvm, WhenWriteNullPointerData_ThenReturnZero)
 	EXPECT_EQ(0, gpNvm_Write(1, NULL));
 }
 
-TEST_F(nvm, GivenWritenDataToAdress_WhenReadFromAdress_ThenDataIsTheSameAndReturnIsPageSize)
+TEST_F(nvm, GivenWritenDataToAddress_WhenReadFromAddress_ThenDataIsTheSameAndReturnIsPageSize)
 {
 	char data_to_write[PAGE_SIZE] = {1,2,3,4,5,6,7,8,9,'a',1,2,3,4,5,6,7,8,9,'a',1,2,3,4,5,6,7,8,9,'a',1,2,3,4,5,6,7,8,9,'a',1,2,3,4,5,6,7,8,9,'a',1,2,3,4,5,6,7,8,9,'a',1,2,3,4};
 	char data_to_read[PAGE_SIZE];
@@ -60,7 +60,7 @@ TEST_F(nvm, GivenWritenDataToAdress_WhenReadFromAdress_ThenDataIsTheSameAndRetur
 	EXPECT_TRUE(0 == memcmp(data_to_write, data_to_read, PAGE_SIZE));
 }
 
-TEST_F(nvm, GivenWritenDataToAdress_WhenReadMultripleTimesFromAdress_ThenDataIsTheSameAndReturnIsPageSize)
+TEST_F(nvm, GivenWritenDataToAddress_WhenReadMultripleTimesFromAddress_ThenDataIsTheSameAndReturnIsPageSize)
 {
 	char data_to_write[PAGE_SIZE] = {1,2,3,4,5,6,7,8,9,'a',1,2,3,4,5,6,7,8,9,'a',1,2,3,4,5,6,7,8,9,'a',1,2,3,4,5,6,7,8,9,'a',1,2,3,4,5,6,7,8,9,'a',1,2,3,4,5,6,7,8,9,'a',1,2,3,4};
 	char data_to_read[PAGE_SIZE];

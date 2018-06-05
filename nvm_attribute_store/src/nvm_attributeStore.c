@@ -43,14 +43,14 @@ static bool ReadMainAttrAllocTableFromNvm(UInt8* pBuffer);
 static bool WriteAttrAllocTableToNvm(UInt8* pBuffer, int startingAddress);
 static bool WriteBackupAttrAllocTableToNvm(UInt8* pBuffer);
 static bool WriteMainAttrAllocTableToNvm(UInt8* pBuffer);
-static gpNvm_Result CalculateNextFreeAdressAndOffsetThatFitsNewAttribute(UInt8 length, UInt16* pAddress, UInt8* pOffset);
+static gpNvm_Result CalculateNextFreeAddressAndOffsetThatFitsNewAttribute(UInt8 length, UInt16* pAddress, UInt8* pOffset);
 static gpNvm_Result GetAndValidateAttributeValue(gpNvm_AttrId attrId, UInt8* pLength, UInt8* pValue);
 static gpNvm_Result GetAttributeAllocTable();
 static gpNvm_Result GetAttributeValue(gpNvm_AttrId attrId, UInt8 *pValue);
 static gpNvm_Result ReadBackupAndRestoreMainAttrAllocTable(UInt8* pBuffer);
 static gpNvm_Result SetAttributeValue(UInt8 length, UInt16 startOfCurrentAddress, UInt8 startOfCurrentOffset, UInt8* pValue);
-static UInt16 GetAdressWithOffset(UInt16 address);
-static UInt16 GetAdressWithoutOffset(UInt16 address);
+static UInt16 GetAddressWithOffset(UInt16 address);
+static UInt16 GetAddressWithoutOffset(UInt16 address);
 static void ClearAttributeAllocTableEntry(gpNvm_AttrId attrId);
 static void UpdateAttrAllocTable(gpNvm_AttrId attrId, UInt16 address, UInt8 offset, UInt8 length, UInt8 crc);
 /******************************************************************************/
@@ -97,7 +97,7 @@ gpNvm_Result gpNvm_SetAttribute(gpNvm_AttrId attrId, UInt8 length, UInt8* pValue
 	}
 
 	ClearAttributeAllocTableEntry(attrId);
-	rv = CalculateNextFreeAdressAndOffsetThatFitsNewAttribute(length, &address, &offset);
+	rv = CalculateNextFreeAddressAndOffsetThatFitsNewAttribute(length, &address, &offset);
 	if (rv != OK)
 	{
 		return rv;
@@ -258,7 +258,7 @@ static gpNvm_Result SetAttributeValue(UInt8 length, UInt16 address, UInt8 offset
 static void CalculateAddressAndOffsetFromAbsEndOfPreviousEntry(int absoluteEndOfPreviousEntry, UInt16* pAddress, UInt8* pOffset)
 {
 	*pOffset = absoluteEndOfPreviousEntry % PAGE_SIZE;
-	*pAddress = GetAdressWithOffset(absoluteEndOfPreviousEntry / PAGE_SIZE);
+	*pAddress = GetAddressWithOffset(absoluteEndOfPreviousEntry / PAGE_SIZE);
 }
 
 static bool WillFit(int startNext, int endCurrent, UInt8 length)
@@ -268,10 +268,10 @@ static bool WillFit(int startNext, int endCurrent, UInt8 length)
 
 static int CalculateAbsoluteStartOfEntry(int index, AAT_t* pAttrAllocTableEntries)
 {
-	return (GetAdressWithoutOffset(pAttrAllocTableEntries[index].address) * PAGE_SIZE) + pAttrAllocTableEntries[index].offset;
+	return (GetAddressWithoutOffset(pAttrAllocTableEntries[index].address) * PAGE_SIZE) + pAttrAllocTableEntries[index].offset;
 }
 
-static gpNvm_Result CalculateNextFreeAdressAndOffsetThatFitsNewAttribute(UInt8 length, UInt16* pAddress, UInt8* pOffset)
+static gpNvm_Result CalculateNextFreeAddressAndOffsetThatFitsNewAttribute(UInt8 length, UInt16* pAddress, UInt8* pOffset)
 {
 	gpNvm_Result rv = NOK;
 
@@ -333,12 +333,12 @@ static gpNvm_Result CalculateNextFreeAdressAndOffsetThatFitsNewAttribute(UInt8 l
 	return rv;
 }
 
-static UInt16 GetAdressWithoutOffset(UInt16 address)
+static UInt16 GetAddressWithoutOffset(UInt16 address)
 {
 	return (address - (NVM_OFFSET + AAT_DATA_OFFSET));
 }
 
-static UInt16 GetAdressWithOffset(UInt16 address)
+static UInt16 GetAddressWithOffset(UInt16 address)
 {
 	return (address + NVM_OFFSET + AAT_DATA_OFFSET);
 }

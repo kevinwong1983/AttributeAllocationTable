@@ -40,11 +40,11 @@ public:
 		closedir(folder);
 	}
 
-	void SetupAttrAllocTabletInNvm(AAT_format_t attrAllocTableFormat, int startingAdressPage)
+	void SetupAttrAllocTabletInNvm(AAT_format_t attrAllocTableFormat, int startingAddressPage)
 	{
 		int i;
 		UInt8* pAAT = (UInt8*) (&attrAllocTableFormat);
-		for (i = startingAdressPage; i < (startingAdressPage + AAT_NUMBER_OF_PAGES); i++)
+		for (i = startingAddressPage; i < (startingAddressPage + AAT_NUMBER_OF_PAGES); i++)
 		{
 			UInt8 buffer[PAGE_SIZE];
 			memset(buffer, 0, sizeof(buffer));
@@ -105,7 +105,7 @@ public:
     	return DebugAat[AttributeId];
 	}
 
-    UInt16 getAdressWithOffset(UInt16 address)
+    UInt16 getAddressWithOffset(UInt16 address)
     {
     	return (address + NVM_OFFSET + AAT_DATA_OFFSET);
     }
@@ -113,7 +113,7 @@ public:
     void ExpectAttributeAllocInfo(UInt16 attributeId, UInt16 address, UInt8 offset, UInt8 length, UInt8 crc)
     {
     	AAT_t AttributeInfo = getAttributeInfo(attributeId);
-		EXPECT_EQ(getAdressWithOffset(address), AttributeInfo.address);
+		EXPECT_EQ(getAddressWithOffset(address), AttributeInfo.address);
 		EXPECT_EQ(offset, AttributeInfo.offset);
 		EXPECT_EQ(length, AttributeInfo.length);
 		EXPECT_EQ(crc, AttributeInfo.crc);
