@@ -330,6 +330,8 @@ static gpNvm_Result CalculateNextFreeAddressAndOffsetThatFitsNewAttribute(UInt8 
 		}
 	}
 
+	free(pAttrAllocTableEntries);
+
 	return rv;
 }
 
